@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#166534"/>
+      <stop offset="50%" stop-color="#15803d"/>
+      <stop offset="100%" stop-color="#14532d"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047"/>
+      <stop offset="100%" stop-color="#eab308"/>
+    </linearGradient>
+    <linearGradient id="leaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ade80"/>
+      <stop offset="100%" stop-color="#22c55e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Circle with Safe Margin for Maskable Icon -->
+  <rect width="512" height="512" rx="110" fill="url(#bg)"/>
+
+  <!-- Sun Rays Subtle Arc -->
+  <circle cx="256" cy="180" r="90" fill="#fef08a" opacity="0.15"/>
+
+  <!-- Wheat Head / Sprout Motif -->
+  <g transform="translate(0, 10)">
+    <!-- Central Stalk -->
+    <path d="M256 390 V210" stroke="url(#gold)" stroke-width="14" stroke-linecap="round"/>
+
+    <!-- Left Grains -->
+    <path d="M256 340 C210 325 200 280 256 295" fill="url(#gold)"/>
+    <path d="M256 290 C200 275 190 230 256 245" fill="url(#gold)"/>
+    <path d="M256 240 C205 220 200 180 256 195" fill="url(#gold)"/>
+
+    <!-- Right Grains -->
+    <path d="M256 340 C302 325 312 280 256 295" fill="url(#gold)"/>
+    <path d="M256 290 C312 275 322 230 256 245" fill="url(#gold)"/>
+    <path d="M256 240 C307 220 312 180 256 195" fill="url(#gold)"/>
+
+    <!-- Top Sprout / Crown -->
+    <path d="M256 195 C240 145 256 125 256 125 C256 125 272 145 256 195 Z" fill="url(#gold)"/>
+
+    <!-- Emerging Green Leaves (Setu / Growth) -->
+    <path d="M256 380 C180 380 150 300 250 320" fill="none" stroke="url(#leaf)" stroke-width="14" stroke-linecap="round"/>
+    <path d="M256 380 C332 380 362 300 262 320" fill="none" stroke="url(#leaf)" stroke-width="14" stroke-linecap="round"/>
+
+    <!-- Base Earth / Soil Arc -->
+    <path d="M140 410 Q256 435 372 410" stroke="#fef08a" stroke-width="8" stroke-linecap="round" opacity="0.8"/>
+  </g>
+</svg>

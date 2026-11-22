@@ -1,0 +1,6 @@
+{
+  "name": "Kisan Setu - Smart Agriculture & Farmer Hub",
+  "description": "किसानों के लिए संपूर्ण डिजिटल सेतु - मंडी भाव, फसल डॉक्टर, मौसम पूर्वानुमान, सरकारी योजनाएं, खाद-बीज कैलकुलेटर और किसान बाजार।",
+  "requestFramePermissions": ["geolocation", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

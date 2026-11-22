@@ -1,0 +1,179 @@
+{
+  "entities": {
+    "MandiPatrakRecord": {
+      "title": "MandiPatrakRecord",
+      "description": "Verified daily mandi arrival and commodity price bulletin published for all farmers.",
+      "type": "object",
+      "properties": {
+        "mandiId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Identifier of the mandi (e.g., mp-vidisha-ganjbasoda)."
+        },
+        "mandiName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 150,
+          "description": "Display name of the mandi committee."
+        },
+        "district": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "District name."
+        },
+        "state": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "State name."
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{2}-[0-9]{2}-[0-9]{4}$",
+          "description": "Bulletin date in DD-MM-YYYY format."
+        },
+        "totalContracts": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Total auction contracts."
+        },
+        "totalArrival": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Total arrival volume formatted."
+        },
+        "arrivalUnit": {
+          "type": "string",
+          "enum": ["बोरी", "क्विंटल"],
+          "description": "Arrival measurement unit."
+        },
+        "releaseTime": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 200,
+          "description": "Bulletin release or sync note."
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["photo_scan", "manual_official", "govt_sync"],
+          "description": "How the verified bulletin was entered."
+        },
+        "rows": {
+          "type": "array",
+          "description": "List of commodity rate rows (bounded to 60 crops max)."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "description": "UID of verified admin publisher."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of publication."
+        }
+      },
+      "required": [
+        "mandiId",
+        "mandiName",
+        "district",
+        "state",
+        "date",
+        "totalContracts",
+        "totalArrival",
+        "arrivalUnit",
+        "releaseTime",
+        "sourceType",
+        "rows",
+        "updatedByUid",
+        "updatedAt"
+      ]
+    },
+    "UserPreference": {
+      "title": "UserPreference",
+      "description": "Farmer's pinned favorite mandi and crop preferences synced across devices.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID matching document ID."
+        },
+        "favoriteMandiId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Pinned mandi identifier."
+        },
+        "favoriteState": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Selected state name."
+        },
+        "favoriteDistrict": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Selected district name."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last preference update."
+        }
+      },
+      "required": [
+        "userId",
+        "favoriteMandiId",
+        "favoriteState",
+        "favoriteDistrict",
+        "updatedAt"
+      ]
+    },
+    "AdminMember": {
+      "title": "AdminMember",
+      "description": "Allowlisted admin users authorized to publish daily mandi patraks.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 150,
+          "description": "Admin email address."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin"],
+          "description": "Admin role marker."
+        }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/mandiPatraks/{patrakId}": {
+      "schema": { "$ref": "#/entities/MandiPatrakRecord" },
+      "description": "Publicly readable daily official mandi bulletins; writable only by verified admins."
+    },
+    "/userPreferences/{userId}": {
+      "schema": { "$ref": "#/entities/UserPreference" },
+      "description": "Per-user pinned favorite mandi settings."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminMember" },
+      "description": "Allowlist of admin UIDs."
+    }
+  }
+}

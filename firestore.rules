@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 2 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'dev.rgu201@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // 3. Entity Validators (Anti-Update-Gap)
+    function isValidMandiPatrak(data) {
+      return data.keys().hasAll([
+          'mandiId', 'mandiName', 'district', 'state', 'date',
+          'totalContracts', 'totalArrival', 'arrivalUnit',
+          'releaseTime', 'sourceType', 'rows', 'updatedByUid', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'mandiId', 'mandiName', 'district', 'state', 'date',
+          'totalContracts', 'totalArrival', 'arrivalUnit',
+          'releaseTime', 'sourceType', 'rows', 'updatedByUid', 'updatedAt'
+        ])
+        && data.mandiId is string && data.mandiId.size() >= 2 && data.mandiId.size() <= 100 && data.mandiId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.mandiName is string && data.mandiName.size() >= 2 && data.mandiName.size() <= 150
+        && data.district is string && data.district.size() >= 2 && data.district.size() <= 100
+        && data.state is string && data.state.size() >= 2 && data.state.size() <= 100
+        && data.date is string && data.date.size() == 10 && data.date.matches('^[0-9]{2}-[0-9]{2}-[0-9]{4}$')
+        && data.totalContracts is string && data.totalContracts.size() >= 1 && data.totalContracts.size() <= 40
+        && data.totalArrival is string && data.totalArrival.size() >= 1 && data.totalArrival.size() <= 40
+        && data.arrivalUnit in ['बोरी', 'क्विंटल']
+        && data.releaseTime is string && data.releaseTime.size() >= 2 && data.releaseTime.size() <= 200
+        && data.sourceType in ['photo_scan', 'manual_official', 'govt_sync']
+        && data.rows is list && data.rows.size() > 0 && data.rows.size() <= 60
+        && data.rows[0] is map
+        && data.rows[0].keys().hasAll(['sNo', 'cropName', 'contracts', 'arrival', 'minPrice', 'maxPrice', 'modalPrice'])
+        && data.updatedByUid is string && data.updatedByUid == request.auth.uid
+        && data.updatedAt == request.time;
+    }
+
+    function isValidUserPreference(data, userId) {
+      return data.keys().hasAll(['userId', 'favoriteMandiId', 'favoriteState', 'favoriteDistrict', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'favoriteMandiId', 'favoriteState', 'favoriteDistrict', 'updatedAt'])
+        && data.userId is string && data.userId == request.auth.uid && data.userId == userId
+        && data.favoriteMandiId is string && data.favoriteMandiId.size() >= 2 && data.favoriteMandiId.size() <= 100 && data.favoriteMandiId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.favoriteState is string && data.favoriteState.size() >= 2 && data.favoriteState.size() <= 100
+        && data.favoriteDistrict is string && data.favoriteDistrict.size() >= 2 && data.favoriteDistrict.size() <= 100
+        && data.updatedAt == request.time;
+    }
+
+    // 4. Collection Rules
+    match /mandiPatraks/{patrakId} {
+      // Public agricultural price board (zero PII) so all farmers get 24/7 auto-sync
+      allow get: if isValidId(patrakId);
+      allow list: if true;
+      allow create: if isValidId(patrakId) && isAdmin() && isValidMandiPatrak(incoming());
+      allow update: if isValidId(patrakId) && isAdmin() && isValidMandiPatrak(incoming())
+        && incoming().mandiId == existing().mandiId
+        && incoming().date == existing().date
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'mandiName', 'district', 'state', 'totalContracts', 'totalArrival',
+          'arrivalUnit', 'releaseTime', 'sourceType', 'rows', 'updatedByUid', 'updatedAt'
+        ]);
+      allow delete: if isValidId(patrakId) && isAdmin();
+    }
+
+    match /userPreferences/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if isVerifiedUser() && resource.data.userId == request.auth.uid;
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUserPreference(incoming(), userId);
+      allow update: if isValidId(userId) && isOwner(userId) && isValidUserPreference(incoming(), userId)
+        && incoming().userId == existing().userId
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'favoriteMandiId', 'favoriteState', 'favoriteDistrict', 'updatedAt'
+        ]);
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+  }
+}
