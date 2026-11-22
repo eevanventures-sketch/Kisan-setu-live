@@ -281,15 +281,17 @@ app.get('/api/mandi/live-gov-sync', async (req, res) => {
   }
 });
 
-// Shared Gemini client utility on the server
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
+// Shared lazy Gemini client utility on the server (never fails startup if key is unset initially)
+function getAiClient(): GoogleGenAI {
+  return new GoogleGenAI({
+    apiKey: process.env.GEMINI_API_KEY || '',
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
     },
-  },
-});
+  });
+}
 
 // Expert Agronomy System Prompt
 const AGRONOMY_SYSTEM_PROMPT_HI = `आप "किसान मित्र (Kisan Mitra)" हैं — भारत के शीर्षस्थ कृषि वैज्ञानिक एवं पादप रोग विशेषज्ञ (Senior Agronomist & Plant Pathologist)।
@@ -391,6 +393,7 @@ app.post('/api/crop-doctor/chat', async (req, res) => {
       { role: 'user', parts: [{ text: message.trim() }] },
     ];
 
+    const ai = getAiClient();
     const { result: response, model: usedModel } = await generateWithModelFallback((model) =>
       ai.models.generateContent({
         model,
@@ -451,6 +454,7 @@ app.post('/api/crop-doctor/diagnose', async (req, res) => {
         ? `You are an expert Indian plant pathologist & entomologist. Always respond in clear English. Note: If a farmer is holding a crop leaf, stem, pod, or caterpillar/insect in their hand, inspect the leaf and insect closely—never dismiss a hand-held plant photo as non-plant.`
         : `आप भारत के शीर्ष पादप रोग व कीट वैज्ञानिक हैं। सभी JSON फ़ील्ड (crop, name, causes, symptoms, organicRemedy, chemicalTreatment, preventiveMeasures) का पूरा उत्तर सरल और स्पष्ट हिंदी (देवनागरी) में ही दें (केवल रासायनिक नाम/ब्रांड नाम ब्रैकेट में अंग्रेज़ी में लिख सकते हैं, पर कभी भी अंग्रेज़ी वाक्य न लिखें)। विशेष ध्यान: यदि किसान अपने हाथ से पौधे की पत्ती पकड़कर फोटो दिखा रहा है, तो पत्ती, उस पर मौजूद कीट/इल्ली/सुंडी या धब्बों की गहराई से जांच करें—हाथ दिखने के कारण फोटो को कभी 'फसल नहीं है' न बताएं!`;
 
+    const ai = getAiClient();
     const { result: response, model: usedModel } = await generateWithModelFallback((model) =>
       ai.models.generateContent({
         model,
@@ -565,6 +569,7 @@ app.post('/api/mandi/parse-patrak', async (req, res) => {
     }
 
     const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+    const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: 'gemini-4-hydrogen',
       contents: {
