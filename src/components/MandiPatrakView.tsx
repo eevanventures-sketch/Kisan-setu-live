@@ -101,6 +101,7 @@ export const MandiPatrakView: React.FC = () => {
   );
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [show7DayComparison, setShow7DayComparison] = useState<boolean>(true);
   const [comparisonCrop, setComparisonCrop] = useState<string>('सोयाबीन');
@@ -111,6 +112,8 @@ export const MandiPatrakView: React.FC = () => {
   const [customVersion, setCustomVersion] = useState<number>(0);
   const [isParsingPhoto, setIsParsingPhoto] = useState<boolean>(false);
   const photoInputRef = React.useRef<HTMLInputElement | null>(null);
+  const autoSyncAttemptedRef = React.useRef<Map<string, number>>(new Map());
+  const sharedLoadedRef = React.useRef<boolean>(false);
 
   // Firebase Auth & 24/7 Cloud Auto-Sync State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -198,23 +201,150 @@ export const MandiPatrakView: React.FC = () => {
     return () => unsubPref();
   }, [currentUser]);
 
-  // Auto-fetch any shared patraks uploaded on the Express server on mount as well
+  const runMandiAutoSync = React.useCallback(
+    async (opts?: { force?: boolean; silent?: boolean }) => {
+      const force = Boolean(opts?.force);
+      const silent = Boolean(opts?.silent);
+      const targetDate = dynamicDates.today.dateStr;
+      const attemptKey = `${selectedMandiId}__${targetDate}`;
+      const lastAttempt = autoSyncAttemptedRef.current.get(attemptKey) || 0;
+
+      if (!force && Date.now() - lastAttempt < 15 * 60 * 1000) {
+        return;
+      }
+      autoSyncAttemptedRef.current.set(attemptKey, Date.now());
+
+      setIsAutoSyncing(true);
+      if (!silent) {
+        setSyncNotice(`🔄 ${currentPatrak.mandiName} के आज (${targetDate}) के ताज़ा मंडी भाव स्वतः खोजे जा रहे हैं...`);
+      }
+
+      try {
+        const res = await fetchApi(
+          '/api/mandi/auto-sync',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mandiId: selectedMandiId,
+              mandiName: currentPatrak.mandiName,
+              district: currentPatrak.district,
+              state: currentPatrak.state,
+              date: targetDate,
+              arrivalUnit: currentPatrak.arrivalUnit === 'क्विंटल' ? 'क्विंटल' : 'बोरी',
+              force,
+            }),
+          },
+          28000
+        );
+
+        const data = await res.json();
+        if (data?.patrak && Array.isArray(data.patrak.rows) && data.patrak.rows.length > 0) {
+          saveCustomPatrak(data.patrak);
+          setCustomVersion((v) => v + 1);
+
+          if (data.foundToday) {
+            setSyncNotice(
+              data.message || `✅ आज (${data.patrak.date}) के ताज़ा मंडी भाव स्वतः अद्यतित हो गए!`
+            );
+            if (isAdmin) {
+              try {
+                await publishMandiPatrakToCloud({
+                  mandiId: selectedMandiId,
+                  mandiName: currentPatrak.mandiName,
+                  district: currentPatrak.district,
+                  state: currentPatrak.state,
+                  date: data.patrak.date,
+                  totalContracts: String(data.patrak.totalContracts ?? '-'),
+                  totalArrival: String(data.patrak.totalArrival ?? '-'),
+                  arrivalUnit: data.patrak.arrivalUnit === 'क्विंटल' ? 'क्विंटल' : 'बोरी',
+                  releaseTime: String(data.patrak.releaseTime || `स्वतः लाइव सिंक (${data.patrak.date})`),
+                  sourceType: 'govt_sync',
+                  rows: data.patrak.rows,
+                });
+              } catch {
+                // shared server file already persisted
+              }
+            }
+          } else {
+            setSyncNotice(
+              data.message || `✅ नवीनतम उपलब्ध मंडी पत्रक (${data.patrak.date}) स्वतः अद्यतित!`
+            );
+          }
+          setTimeout(() => setSyncNotice(null), 7000);
+        } else if (!silent) {
+          setSyncNotice(
+            data?.message || `ℹ️ आज (${targetDate}) का नया भाव पत्रक अभी ऑनलाइन उपलब्ध नहीं हो सका।`
+          );
+          setTimeout(() => setSyncNotice(null), 7000);
+        }
+      } catch {
+        if (!silent) {
+          setSyncNotice('⚠️ लाइव मंडी सर्वर से संपर्क नहीं हो सका — कृपया कुछ सेकंड बाद पुनः प्रयास करें।');
+          setTimeout(() => setSyncNotice(null), 6000);
+        }
+      } finally {
+        setIsAutoSyncing(false);
+      }
+    },
+    [
+      selectedMandiId,
+      dynamicDates.today.dateStr,
+      currentPatrak.mandiName,
+      currentPatrak.district,
+      currentPatrak.state,
+      currentPatrak.arrivalUnit,
+      isAdmin,
+    ]
+  );
+
+  // Auto-fetch shared patraks from Express server on mount, then auto-sync today's live rates if missing
   React.useEffect(() => {
     let active = true;
-    fetchApi('/api/mandi/shared-patraks')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!active || !data?.patraks) return;
-        const count = mergeSharedPatraks(data.patraks);
-        if (count > 0) {
-          setCustomVersion((v) => v + 1);
+    const initSync = async () => {
+      try {
+        const r = await fetchApi('/api/mandi/shared-patraks');
+        if (r.ok) {
+          const data = await r.json();
+          if (active && data?.patraks) {
+            const count = mergeSharedPatraks(data.patraks);
+            if (count > 0) {
+              setCustomVersion((v) => v + 1);
+            }
+          }
         }
-      })
-      .catch(() => {});
+      } catch {
+        // ignore network hiccup on initial cache pull
+      } finally {
+        if (active) {
+          sharedLoadedRef.current = true;
+        }
+      }
+    };
+    initSync();
     return () => {
       active = false;
     };
   }, []);
+
+  React.useEffect(() => {
+    if (
+      selectedDateOption === 'today' &&
+      !selectedDateMeta.isWeekend &&
+      !currentPatrak.isVerifiedForDate
+    ) {
+      const timer = setTimeout(() => {
+        runMandiAutoSync({ force: false, silent: true });
+      }, sharedLoadedRef.current ? 150 : 900);
+      return () => clearTimeout(timer);
+    }
+  }, [
+    selectedDateOption,
+    selectedDateMeta.isWeekend,
+    selectedMandiId,
+    currentPatrak.isVerifiedForDate,
+    runMandiAutoSync,
+  ]);
 
   const handleToggleFavoriteMandi = async () => {
     const fav = {
@@ -367,53 +497,44 @@ export const MandiPatrakView: React.FC = () => {
     setTimeout(() => setSyncNotice(null), 7000);
   };
 
-  // Handle Refresh
-  const handleRefreshBulletin = () => {
+  // Handle Refresh (fetches shared server cache + triggers live today auto-sync)
+  const handleRefreshBulletin = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 600);
+    try {
+      const r = await fetchApi('/api/mandi/shared-patraks');
+      if (r.ok) {
+        const sData = await r.json();
+        if (sData?.patraks) {
+          const merged = mergeSharedPatraks(sData.patraks);
+          if (merged > 0) setCustomVersion((v) => v + 1);
+        }
+      }
+    } catch {
+      // proceed directly to live auto-sync
+    }
+    await runMandiAutoSync({ force: true, silent: false });
+    setIsRefreshing(false);
   };
 
-  // Handle Shared Server & Government API Sync
+  // Handle Shared Server & Live Portal Auto-Sync
   const handleLiveGovSync = async () => {
     setIsRefreshing(true);
     try {
-      const [sharedRes, govRes] = await Promise.allSettled([
-        fetchApi('/api/mandi/shared-patraks'),
-        fetchApi(`/api/mandi/live-gov-sync?state=${encodeURIComponent(selectedState === 'मध्य प्रदेश' ? 'Madhya Pradesh' : selectedState)}`),
-      ]);
-
-      let sharedMerged = 0;
-      if (sharedRes.status === 'fulfilled' && sharedRes.value.ok) {
-        const sData = await sharedRes.value.json();
+      const sharedRes = await fetchApi('/api/mandi/shared-patraks');
+      if (sharedRes.ok) {
+        const sData = await sharedRes.json();
         if (sData?.patraks) {
-          sharedMerged = mergeSharedPatraks(sData.patraks);
+          const sharedMerged = mergeSharedPatraks(sData.patraks);
           if (sharedMerged > 0) setCustomVersion((v) => v + 1);
         }
       }
-
-      if (govRes.status === 'fulfilled' && govRes.value.ok) {
-        const gData = await govRes.value.json();
-        if (gData.liveFetched && gData.count > 0) {
-          setSyncNotice(`✅ data.gov.in (Agmarknet) से ${gData.count} ताज़ा सरकारी रिकॉर्ड प्राप्त हुए!`);
-        } else if (sharedMerged > 0) {
-          setSyncNotice(`✅ सर्वर से ${sharedMerged} अद्यतित मंडी पत्रक सिंक हो गए!`);
-        } else {
-          setSyncNotice(`ℹ️ ${gData.message || 'सत्यापित स्थानीय पत्रक सक्रिय हैं। नया पत्रक नीचे "फोटो से ऑटो-अपडेट" द्वारा जोड़ें।'}`);
-        }
-      } else {
-        setSyncNotice('✅ सत्यापित रिकॉर्ड पुनः लोड हो गए! नया दैनिक पत्रक फोटो से तुरंत स्कैन कर सकते हैं।');
-      }
+      await runMandiAutoSync({ force: true, silent: false });
     } catch {
-      setSyncNotice('✅ स्थानीय सत्यापित रिकॉर्ड से भाव पुनः लोड हुए!');
-    }
-    setTimeout(() => {
+      setSyncNotice('⚠️ लाइव पोर्टल से सिंक करते समय समस्या आई — कृपया पुनः प्रयास करें।');
+      setTimeout(() => setSyncNotice(null), 6000);
+    } finally {
       setIsRefreshing(false);
-    }, 700);
-    setTimeout(() => {
-      setSyncNotice(null);
-    }, 7000);
+    }
   };
 
   // Handle Official Patrak Photo Auto-Parse via Gemini Vision
@@ -1365,14 +1486,31 @@ export const MandiPatrakView: React.FC = () => {
             पत्रक दिनांक: {currentPatrak.date} • {currentPatrak.releaseTime}
           </div>
 
-          {/* Clear banner when today's bulletin is not yet published so user is never confused about dates */}
-          {selectedDateOption === 'today' && currentPatrak.isVerifiedForDate === false && currentPatrak.status !== 'closed' && (
+          {/* Auto-syncing status or clear fallback banner when today's bulletin is not yet published */}
+          {selectedDateOption === 'today' && isAutoSyncing && (
+            <div className="mt-3 max-w-2xl mx-auto p-3 rounded-xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 text-xs flex items-center justify-center gap-2.5 font-bold">
+              <RefreshCw className="w-4 h-4 text-emerald-700 animate-spin shrink-0" />
+              <span>
+                🔄 आज (<strong>{selectedDateMeta.dateStr}</strong>) के ताज़ा मंडी भाव सरकारी पोर्टल व लाइव वेब स्रोतों से स्वतः प्राप्त किए जा रहे हैं...
+              </span>
+            </div>
+          )}
+
+          {selectedDateOption === 'today' && !isAutoSyncing && currentPatrak.isVerifiedForDate === false && currentPatrak.status !== 'closed' && (
             <div className="mt-3 max-w-2xl mx-auto p-2.5 rounded-xl bg-amber-50 border-2 border-amber-400 text-amber-950 text-xs flex flex-col sm:flex-row items-center justify-between gap-2 text-left">
               <span>
-                ⏳ <strong>आज ({selectedDateMeta.dateStr}) का नया भाव पत्रक अभी अपलोड नहीं हुआ है।</strong>{' '}
+                ⏳ <strong>आज ({selectedDateMeta.dateStr}) का आधिकारिक मंडी भाव पत्रक अभी ऑनलाइन जारी नहीं हुआ है।</strong>{' '}
                 नीचे अंतिम सत्यापित पत्रक (<strong>{currentPatrak.date}</strong>) के भाव हैं।
               </span>
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => runMandiAutoSync({ force: true, silent: false })}
+                  className="px-2.5 py-1 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-black text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>लाइव खोजें</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => photoInputRef.current?.click()}
@@ -1535,6 +1673,30 @@ export const MandiPatrakView: React.FC = () => {
                 </tr>
               </tfoot>
             </table>
+          </div>
+        )}
+
+        {/* Grounded Live Web Source Citations (when auto-synced from online mandi bulletins) */}
+        {currentPatrak.sourceUrls && currentPatrak.sourceUrls.length > 0 && (
+          <div className="px-4 py-3 bg-emerald-50/70 border-t border-emerald-200 text-[11px] text-emerald-950 flex flex-wrap items-center gap-2">
+            <span className="font-black flex items-center gap-1">
+              <Globe className="w-3.5 h-3.5 text-emerald-700" />
+              <span>लाइव सत्यापित स्रोत:</span>
+            </span>
+            {currentPatrak.sourceUrls
+              .filter((s) => /^https?:\/\//i.test(s.uri))
+              .map((s, idx) => (
+                <a
+                  key={`${s.uri}-${idx}`}
+                  href={s.uri}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white border border-emerald-300 text-emerald-900 hover:bg-emerald-100 font-bold"
+                >
+                  <span className="truncate max-w-[180px]">{s.title}</span>
+                  <ExternalLink className="w-3 h-3 shrink-0" />
+                </a>
+              ))}
           </div>
         )}
 

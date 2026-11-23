@@ -682,13 +682,889 @@ app.delete('/api/bazaar/listings/:id', (req, res) => {
   return res.json({ deleted: true });
 });
 
+function getServerIndianNow(): Date {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utc + 5.5 * 3600000);
+}
+
+function formatServerDDMMYYYY(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+function ddmmyyyyToSortable(d: string): string {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(d || '').trim());
+  if (!m) return '';
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+function normalizeSlashOrDashToDDMMYYYY(raw: string): string {
+  const s = String(raw || '').trim();
+  const dm = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(s);
+  if (dm) {
+    return `${dm[1].padStart(2, '0')}-${dm[2].padStart(2, '0')}-${dm[3]}`;
+  }
+  const ym = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(s);
+  if (ym) {
+    return `${ym[3].padStart(2, '0')}-${ym[2].padStart(2, '0')}-${ym[1]}`;
+  }
+  return '';
+}
+
+function lookupMspForCrop(cropName: string): number | string {
+  const c = String(cropName || '').toLowerCase();
+  if (c.includes('सोयाबीन') || c.includes('soybean') || c.includes('soya')) return 5708;
+  if (c.includes('सरसों') || c.includes('mustard') || c.includes('sarson')) return 6200;
+  if (c.includes('चना') || c.includes('chana') || c.includes('gram')) return 5958;
+  if (c.includes('मसूर') || c.includes('masoor') || c.includes('lentil')) return 7000;
+  if (c.includes('शरवती') || c.includes('शरबती') || c.includes('गेहू') || c.includes('गेहूं') || c.includes('wheat') || c.includes('मालवा')) return 2625;
+  if (c.includes('मूंग') || c.includes('मुंग') || c.includes('moong')) return 8780;
+  if (c.includes('उड़द') || c.includes('urad')) return 8200;
+  if (c.includes('मक्का') || c.includes('maize')) return 2410;
+  if (c.includes('धान') || c.includes('paddy')) return 2441;
+  return '-';
+}
+
+function getLatestSavedPatrakForMandi(mandiId: string, beforeDateStr?: string): any | null {
+  const all = readSharedPatraks();
+  const targetSort = beforeDateStr ? ddmmyyyyToSortable(beforeDateStr) : '';
+  const matches = Object.values(all).filter((p: any) => {
+    if (!p || p.mandiId !== mandiId || !Array.isArray(p.rows) || p.rows.length === 0) return false;
+    if (!targetSort) return true;
+    const pSort = ddmmyyyyToSortable(p.date);
+    return pSort && pSort < targetSort;
+  });
+  if (matches.length === 0) return null;
+  matches.sort((a: any, b: any) => ddmmyyyyToSortable(b.date).localeCompare(ddmmyyyyToSortable(a.date)));
+  return matches[0];
+}
+
+function matchPreviousPrice(cropName: string, prevPatrak: any): number {
+  if (!prevPatrak || !Array.isArray(prevPatrak.rows)) return 0;
+  const clean = String(cropName || '').toLowerCase().replace(/\(.*?\)/g, '').trim();
+  if (!clean) return 0;
+  const hit = prevPatrak.rows.find((r: any) => {
+    const rClean = String(r.cropName || '').toLowerCase().replace(/\(.*?\)/g, '').trim();
+    return rClean && (rClean === clean || rClean.includes(clean) || clean.includes(rClean));
+  });
+  return hit && Number(hit.modalPrice) > 0 ? Number(hit.modalPrice) : 0;
+}
+
+function stateToEnglishForGov(state: string): string {
+  const s = String(state || '').trim();
+  if (!s || s.includes('मध्य प्रदेश') || /madhya pradesh/i.test(s)) return 'Madhya Pradesh';
+  if (s.includes('उत्तर प्रदेश') || /uttar pradesh/i.test(s)) return 'Uttar Pradesh';
+  if (s.includes('राजस्थान') || /rajasthan/i.test(s)) return 'Rajasthan';
+  if (s.includes('महाराष्ट्र') || /maharashtra/i.test(s)) return 'Maharashtra';
+  if (s.includes('गुजरात') || /gujarat/i.test(s)) return 'Gujarat';
+  if (s.includes('पंजाब') || /punjab/i.test(s)) return 'Punjab';
+  if (s.includes('हरियाणा') || /haryana/i.test(s)) return 'Haryana';
+  return s;
+}
+
+const HINDI_MONTH_NUM: Record<string, string> = {
+  'जनवरी': '01',
+  'फ़रवरी': '02',
+  'फरवरी': '02',
+  'मार्च': '03',
+  'अप्रैल': '04',
+  'मई': '05',
+  'जून': '06',
+  'जुलाई': '07',
+  'अगस्त': '08',
+  'सितंबर': '09',
+  'सितम्बर': '09',
+  'अक्टूबर': '10',
+  'अक्तूबर': '10',
+  'नवंबर': '11',
+  'नवम्बर': '11',
+  'दिसंबर': '12',
+  'दिसम्बर': '12',
+};
+
+function parseHindiDateToDDMMYYYY(raw: string): string {
+  const clean = String(raw || '').replace(/\s+/g, ' ').trim();
+  const m = clean.match(/^(\d{1,2})\s+([^\s]+)\s+(\d{4})$/);
+  if (!m) return '';
+  const mm = HINDI_MONTH_NUM[m[2].trim()];
+  if (!mm) return '';
+  return `${m[1].padStart(2, '0')}-${mm}-${m[3]}`;
+}
+
+function normalizeHindiGeo(s: string): string {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/तहसील:|मुख्य मंडी|उपमंडी|कृषि उपज मंडी|संभागीय मंडी|मंडी/g, ' ')
+    .replace(/[ौो]/g, 'ो')
+    .replace(/[ैे]/g, 'े')
+    .replace(/[ीि]/g, 'ि')
+    .replace(/[ूु]/g, 'ु')
+    .replace(/[ँं]/g, 'ं')
+    .replace(/[ढ़]/g, 'ड')
+    .replace(/[^a-z0-9\u0900-\u097f]/g, '')
+    .trim();
+}
+
+function stateToKisanSamadhanSlug(state: string): string {
+  const s = String(state || '').trim();
+  if (!s || s.includes('मध्य प्रदेश') || /madhya pradesh/i.test(s)) return 'madhya-pradesh';
+  if (s.includes('उत्तर प्रदेश') || /uttar pradesh/i.test(s)) return 'uttar-pradesh';
+  if (s.includes('राजस्थान') || /rajasthan/i.test(s)) return 'rajasthan';
+  if (s.includes('महाराष्ट्र') || /maharashtra/i.test(s)) return 'maharashtra';
+  if (s.includes('गुजरात') || /gujarat/i.test(s)) return 'gujarat';
+  if (s.includes('पंजाब') || /punjab/i.test(s)) return 'punjab';
+  if (s.includes('हरियाणा') || /haryana/i.test(s)) return 'haryana';
+  if (s.includes('छत्तीसगढ़') || /chhattisgarh/i.test(s)) return 'chhattisgarh';
+  if (s.includes('बिहार') || /bihar/i.test(s)) return 'bihar';
+  return 'madhya-pradesh';
+}
+
+const LIVE_SCRAPE_CROPS: Array<{ label: string; slug: string }> = [
+  { label: 'सोयाबीन', slug: 'soyabean' },
+  { label: 'गेहूं', slug: 'wheat' },
+  { label: 'चना', slug: 'chana-bengal-gram' },
+  { label: 'सरसों', slug: 'mustard' },
+  { label: 'मसूर', slug: 'masur' },
+  { label: 'मक्का', slug: 'maize' },
+  { label: 'धान', slug: 'paddy' },
+  { label: 'मूंग', slug: 'moong' },
+  { label: 'उड़द', slug: 'urad-black-gram' },
+  { label: 'ज्वार', slug: 'jowar' },
+  { label: 'धनिया', slug: 'coriander-seed' },
+  { label: 'तुअर / अरहर', slug: 'tuar-arhar' },
+  { label: 'मूंगफली', slug: 'groundnut' },
+  { label: 'लहसुन', slug: 'garlic' },
+  { label: 'प्याज', slug: 'onion' },
+];
+
+interface ScrapedMandiRow {
+  cropLabel: string;
+  variety: string;
+  mandiRaw: string;
+  mandiNorm: string;
+  districtRaw: string;
+  districtNorm: string;
+  dateStr: string;
+  minPrice: number;
+  maxPrice: number;
+  modalPrice: number;
+  sourceUrl: string;
+}
+
+const stateRatesCache = new Map<string, { fetchedAt: number; rows: ScrapedMandiRow[] }>();
+
+async function fetchStateAgmarknetMirror(stateSlug: string): Promise<ScrapedMandiRow[]> {
+  const cached = stateRatesCache.get(stateSlug);
+  if (cached && Date.now() - cached.fetchedAt < 20 * 60 * 1000 && cached.rows.length > 0) {
+    return cached.rows;
+  }
+
+  const allRows: ScrapedMandiRow[] = [];
+  await Promise.all(
+    LIVE_SCRAPE_CROPS.map(async ({ label, slug }) => {
+      const pageUrl = `https://kisansamadhan.com/mandi-bhav/${slug}/${stateSlug}/`;
+      try {
+        const resp = await fetch(pageUrl, {
+          signal: AbortSignal.timeout(7000),
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KisanSetu/1.0)' },
+        });
+        if (!resp.ok) return;
+        const html = await resp.text();
+        const trMatches = html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
+        for (const tr of trMatches) {
+          const cols = Array.from(tr[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)).map((c) =>
+            c[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+          );
+          if (cols.length < 7) continue;
+          const dateStr = parseHindiDateToDDMMYYYY(cols[1]);
+          if (!dateStr) continue;
+          const parseRs = (v: string) => Math.round(Number(String(v || '').replace(/[₹,\s]/g, '')) || 0);
+          const minP = parseRs(cols[4]);
+          const maxP = parseRs(cols[5]);
+          const modP = parseRs(cols[6]) || Math.round(((minP || maxP) + (maxP || minP)) / 2);
+          if (modP < 100 || modP > 100000) continue;
+
+          const mandiRaw = stripAngleBrackets(cols[0]);
+          const districtPart = stripAngleBrackets(cols[2].split(',')[0] || cols[2]);
+          const variety = stripAngleBrackets(cols[3]);
+
+          allRows.push({
+            cropLabel: label,
+            variety,
+            mandiRaw,
+            mandiNorm: normalizeHindiGeo(mandiRaw),
+            districtRaw: districtPart,
+            districtNorm: normalizeHindiGeo(districtPart),
+            dateStr,
+            minPrice: minP || modP,
+            maxPrice: maxP || modP,
+            modalPrice: modP,
+            sourceUrl: pageUrl,
+          });
+        }
+      } catch {
+        // skip transient single-crop fetch failures
+      }
+    })
+  );
+
+  if (allRows.length > 0) {
+    stateRatesCache.set(stateSlug, { fetchedAt: Date.now(), rows: allRows });
+  }
+  return allRows;
+}
+
+const inFlightAutoSyncs = new Map<string, Promise<any>>();
+const negativeSyncCooldown = new Map<string, number>();
+
+async function performMandiAutoSync(params: {
+  mandiId: string;
+  mandiName: string;
+  district: string;
+  state: string;
+  date: string;
+  arrivalUnit: 'बोरी' | 'क्विंटल';
+  force?: boolean;
+}): Promise<{
+  synced: boolean;
+  cached?: boolean;
+  foundToday: boolean;
+  date: string;
+  source?: string;
+  sourceUrls?: Array<{ title: string; uri: string }>;
+  patrak?: any;
+  message: string;
+}> {
+  const { mandiId, mandiName, district, state, date, arrivalUnit, force } = params;
+  const cacheKey = `${mandiId}__${date}`;
+
+  const allStored = readSharedPatraks();
+  const existingToday = allStored[cacheKey];
+  if (
+    !force &&
+    existingToday &&
+    Array.isArray(existingToday.rows) &&
+    existingToday.rows.length > 0 &&
+    existingToday.updatedAt &&
+    Date.now() - new Date(existingToday.updatedAt).getTime() < 3 * 60 * 60 * 1000
+  ) {
+    return {
+      synced: true,
+      cached: true,
+      foundToday: true,
+      date,
+      source: existingToday.sourceLabel || 'shared_cache',
+      sourceUrls: Array.isArray(existingToday.sourceUrls) ? existingToday.sourceUrls : [],
+      patrak: existingToday,
+      message: `आज (${date}) के ताज़ा मंडी भाव सर्वर पर पहले से अद्यतित हैं।`,
+    };
+  }
+
+  const negUntil = negativeSyncCooldown.get(cacheKey) || 0;
+  if (!force && negUntil > Date.now()) {
+    return {
+      synced: false,
+      foundToday: false,
+      date,
+      message: `आज (${date}) का नया पत्रक अभी ऑनलाइन पोर्टल पर जारी नहीं हुआ है (कुछ देर बाद पुनः जाँच होगी)।`,
+    };
+  }
+
+  if (inFlightAutoSyncs.has(cacheKey)) {
+    return inFlightAutoSyncs.get(cacheKey)!;
+  }
+
+  const job = (async () => {
+    const prevPatrak = getLatestSavedPatrakForMandi(mandiId, date);
+    const prevLatestAny = getLatestSavedPatrakForMandi(mandiId);
+
+    // Source 1: Official data.gov.in Agmarknet API (when DATA_GOV_API_KEY is configured and reachable)
+    const govKey = (process.env.DATA_GOV_API_KEY || '').trim();
+    if (govKey) {
+      try {
+        const engState = stateToEnglishForGov(state);
+        const url = `https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070?api-key=${encodeURIComponent(govKey)}&format=json&filters%5Bstate.keyword%5D=${encodeURIComponent(engState)}&limit=100`;
+        const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        if (resp.ok) {
+          const payload = await resp.json();
+          const records: any[] = Array.isArray(payload?.records) ? payload.records : [];
+          const cleanMandiName = mandiName.toLowerCase();
+          const cleanDistrict = district.toLowerCase();
+
+          const matched = records.filter((rec) => {
+            const mkt = String(rec.market || '').toLowerCase();
+            const dist = String(rec.district || '').toLowerCase();
+            return (
+              (mkt && (cleanMandiName.includes(mkt) || mkt.includes('basoda') && cleanMandiName.includes('गंजबासौदा'))) ||
+              (dist && cleanDistrict && (cleanDistrict.includes(dist) || dist.includes('vidisha') && cleanDistrict.includes('विदिशा')))
+            );
+          });
+
+          if (matched.length > 0) {
+            const recDate = normalizeSlashOrDashToDDMMYYYY(matched[0].arrival_date || '') || date;
+            const grouped = new Map<string, any>();
+            for (const r of matched) {
+              const comm = stripAngleBrackets(r.commodity || r.variety || '');
+              if (!comm) continue;
+              const minP = Number(r.min_price) || 0;
+              const maxP = Number(r.max_price) || 0;
+              const modP = Number(r.modal_price) || Math.round(((minP || maxP) + (maxP || minP)) / 2);
+              if (modP <= 0) continue;
+              grouped.set(comm, {
+                cropName: comm,
+                minPrice: minP || modP,
+                maxPrice: maxP || modP,
+                modalPrice: modP,
+              });
+            }
+
+            if (grouped.size > 0) {
+              const rows = Array.from(grouped.values()).map((item, idx) => {
+                const yPrice = matchPreviousPrice(item.cropName, prevPatrak);
+                return {
+                  sNo: idx + 1,
+                  cropName: item.cropName,
+                  contracts: '-',
+                  arrival: '-',
+                  arrivalUnit,
+                  minPrice: item.minPrice,
+                  maxPrice: item.maxPrice,
+                  modalPrice: item.modalPrice,
+                  yesterdayPrice: yPrice,
+                  priceChange: yPrice > 0 ? item.modalPrice - yPrice : 0,
+                  msp: lookupMspForCrop(item.cropName),
+                };
+              });
+
+              const entry = {
+                mandiId,
+                date: recDate,
+                totalContracts: '-',
+                totalArrival: '-',
+                arrivalUnit,
+                releaseTime: `सरकारी Agmarknet लाइव ऑटो-सिंक (${recDate})`,
+                sourceLabel: 'data.gov.in (Agmarknet)',
+                sourceUrls: [{ title: 'Agmarknet / data.gov.in', uri: 'https://agmarknet.gov.in' }],
+                rows,
+                updatedAt: new Date().toISOString(),
+              };
+              writeSharedPatrak(`${mandiId}__${recDate}`, entry);
+              return {
+                synced: true,
+                foundToday: recDate === date,
+                date: recDate,
+                source: 'data.gov.in',
+                sourceUrls: entry.sourceUrls,
+                patrak: entry,
+                message: `✅ सरकारी पोर्टल Agmarknet से ${recDate} के ${rows.length} जिंसों के भाव स्वतः प्राप्त हुए!`,
+              };
+            }
+          }
+        }
+      } catch (err: any) {
+        console.warn('data.gov.in auto-sync skipped:', err?.message || err);
+      }
+    }
+
+    // Source 2: Live Agmarknet Hindi Mirror (KisanSamadhan) — zero quota limit, global reachability
+    try {
+      const stateSlug = stateToKisanSamadhanSlug(state);
+      const stateRows = await fetchStateAgmarknetMirror(stateSlug);
+      if (stateRows.length > 0) {
+        const targetMandiNorm = normalizeHindiGeo(mandiName);
+        const targetDistrictNorm = normalizeHindiGeo(district);
+
+        const isExactMandi = (r: ScrapedMandiRow) =>
+          Boolean(
+            r.mandiNorm &&
+              targetMandiNorm &&
+              (r.mandiNorm === targetMandiNorm ||
+                targetMandiNorm.includes(r.mandiNorm) ||
+                r.mandiNorm.includes(targetMandiNorm))
+          );
+
+        const isDistrictMandi = (r: ScrapedMandiRow) =>
+          Boolean(
+            r.districtNorm &&
+              targetDistrictNorm &&
+              (r.districtNorm === targetDistrictNorm ||
+                r.districtNorm.includes(targetDistrictNorm) ||
+                targetDistrictNorm.includes(r.districtNorm))
+          );
+
+        const directMatches = stateRows.filter(isExactMandi);
+        const districtMatches = stateRows.filter((r) => !isExactMandi(r) && isDistrictMandi(r));
+
+        const targetDateRowsDirect = directMatches.filter((r) => r.dateStr === date);
+        const targetDateRowsDistrict = districtMatches.filter((r) => r.dateStr === date);
+
+        // Choose best date: today if either direct mandi or district has today's live bulletin, else latest date in direct/district
+        let chosenDate = '';
+        if (targetDateRowsDirect.length > 0 || targetDateRowsDistrict.length > 0) {
+          chosenDate = date;
+        } else {
+          const allDates = [...directMatches, ...districtMatches]
+            .map((r) => r.dateStr)
+            .filter((d) => Boolean(ddmmyyyyToSortable(d)));
+          allDates.sort((a, b) => ddmmyyyyToSortable(b).localeCompare(ddmmyyyyToSortable(a)));
+          chosenDate = allDates[0] || '';
+        }
+
+        if (chosenDate) {
+          const directForDate = directMatches.filter((r) => r.dateStr === chosenDate);
+          const districtForDate = districtMatches.filter((r) => r.dateStr === chosenDate);
+
+          // Also gather earlier rows for real yesterday price diff when available
+          const earlierRows = [...directMatches, ...districtMatches].filter(
+            (r) => ddmmyyyyToSortable(r.dateStr) < ddmmyyyyToSortable(chosenDate)
+          );
+
+          const byCrop = new Map<
+            string,
+            {
+              cropName: string;
+              minPrice: number;
+              maxPrice: number;
+              modalPrice: number;
+              yesterdayPrice: number;
+              sourceUrl: string;
+              isDirect: boolean;
+            }
+          >();
+
+          // First insert direct mandi rows for exact requested market
+          for (const r of directForDate) {
+            const key = r.cropLabel;
+            const prevMatch = earlierRows.find((e) => e.cropLabel === r.cropLabel && isExactMandi(e))
+              || earlierRows.find((e) => e.cropLabel === r.cropLabel);
+            const yPrice = prevMatch ? prevMatch.modalPrice : matchPreviousPrice(r.cropLabel, prevPatrak || prevLatestAny);
+            if (!byCrop.has(key)) {
+              byCrop.set(key, {
+                cropName: r.cropLabel,
+                minPrice: r.minPrice,
+                maxPrice: r.maxPrice,
+                modalPrice: r.modalPrice,
+                yesterdayPrice: yPrice,
+                sourceUrl: r.sourceUrl,
+                isDirect: true,
+              });
+            }
+          }
+
+          // Then add same-district neighboring mandi live rates clearly tagged with actual market name
+          for (const r of districtForDate) {
+            const key = r.cropLabel;
+            if (byCrop.has(key)) continue;
+            const prevMatch = earlierRows.find((e) => e.cropLabel === r.cropLabel);
+            const yPrice = prevMatch ? prevMatch.modalPrice : matchPreviousPrice(r.cropLabel, prevPatrak || prevLatestAny);
+            byCrop.set(key, {
+              cropName: `${r.cropLabel} (${r.mandiRaw} मंडी)`,
+              minPrice: r.minPrice,
+              maxPrice: r.maxPrice,
+              modalPrice: r.modalPrice,
+              yesterdayPrice: yPrice,
+              sourceUrl: r.sourceUrl,
+              isDirect: false,
+            });
+          }
+
+          if (byCrop.size > 0) {
+            const istNow = getServerIndianNow();
+            const timeStr = `${String(istNow.getHours()).padStart(2, '0')}:${String(istNow.getMinutes()).padStart(2, '0')} IST`;
+            const unitOut: 'बोरी' | 'क्विंटल' = 'क्विंटल';
+            const finalRows = Array.from(byCrop.values()).map((item, idx) => ({
+              sNo: idx + 1,
+              cropName: item.cropName,
+              contracts: '-',
+              arrival: '-',
+              arrivalUnit: unitOut,
+              minPrice: item.minPrice,
+              maxPrice: item.maxPrice,
+              modalPrice: item.modalPrice,
+              yesterdayPrice: item.yesterdayPrice,
+              priceChange: item.yesterdayPrice > 0 ? item.modalPrice - item.yesterdayPrice : 0,
+              msp: lookupMspForCrop(item.cropName),
+            }));
+
+            const uniqueSources: Array<{ title: string; uri: string }> = [];
+            const seenUris = new Set<string>();
+            for (const item of byCrop.values()) {
+              if (!seenUris.has(item.sourceUrl)) {
+                seenUris.add(item.sourceUrl);
+                uniqueSources.push({
+                  title: `${item.cropName.split('(')[0].trim()} — Agmarknet लाइव`,
+                  uri: item.sourceUrl,
+                });
+                if (uniqueSources.length >= 5) break;
+              }
+            }
+
+            const directCount = Array.from(byCrop.values()).filter((x) => x.isDirect).length;
+            const labelDetail =
+              directCount > 0
+                ? `${directCount} सीधी मंडी + ${finalRows.length - directCount} जिला मंडी`
+                : `जिला ${district} मंडी संकलन`;
+
+            const entry = {
+              mandiId,
+              date: chosenDate,
+              totalContracts: '-',
+              totalArrival: '-',
+              arrivalUnit: unitOut,
+              releaseTime: `स्वतः लाइव Agmarknet सिंक (${chosenDate} • ${labelDetail} • ${timeStr})`,
+              sourceLabel: 'Agmarknet / KisanSamadhan लाइव',
+              sourceUrls: uniqueSources,
+              rows: finalRows,
+              updatedAt: new Date().toISOString(),
+            };
+
+            writeSharedPatrak(`${mandiId}__${chosenDate}`, entry);
+            negativeSyncCooldown.delete(cacheKey);
+
+            return {
+              synced: true,
+              foundToday: chosenDate === date,
+              date: chosenDate,
+              source: 'Agmarknet लाइव वेब सिंक',
+              sourceUrls: uniqueSources,
+              patrak: entry,
+              message:
+                chosenDate === date
+                  ? `✅ आज (${chosenDate}) के ${finalRows.length} जिंसों के ताज़ा मंडी भाव स्वतः अद्यतित हो गए!`
+                  : `✅ नवीनतम उपलब्ध मंडी पत्रक (${chosenDate} • ${finalRows.length} जिंसें) स्वतः अद्यतित!`,
+            };
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('KisanSamadhan mirror sync skipped:', err?.message || err);
+    }
+
+    // Source 3: Gemini Google Search Grounding (works globally, retrieves real published daily bulletins)
+    if (!process.env.GEMINI_API_KEY) {
+      negativeSyncCooldown.set(cacheKey, Date.now() + 5 * 60 * 1000);
+      return {
+        synced: false,
+        foundToday: false,
+        date,
+        message: 'सर्वर पर लाइव सर्च सेवा (GEMINI_API_KEY) सेट नहीं है। फोटो स्कैन या त्वरित एडिट उपयोग करें।',
+      };
+    }
+
+    try {
+      const ai = getAiClient();
+      const istNow = getServerIndianNow();
+      const [dd, mm, yyyy] = date.split('-');
+      const slashDate = `${dd}/${mm}/${yyyy}`;
+
+      const searchPrompt = `आज की भारतीय तारीख ${date} (${slashDate}) है। कृपया Google Search का उपयोग करके "${mandiName}, जिला ${district}, ${state}" (उदा. MP Mandi Board, Agmarknet, e-NAM, Krishi Jagran, MandiBhavToday, KisanDeals, TractorJunction आदि विश्वसनीय कृषि पोर्टल) के **ताज़ा आधिकारिक मंडी भाव** खोजें।
+
+अत्यंत महत्वपूर्ण नियम:
+1. प्राथमिकता आज दिनांक ${date} के भाव को दें। यदि आज (${date}) का भाव पत्रक अभी इंटरनेट पर उपलब्ध न हो, तो इस मंडी का **सबसे नया (नवीनतम)** वास्तविक प्रकाशित भाव दें, परंतु "publishedDate" में बिल्कुल सही वास्तविक तारीख (DD-MM-YYYY) लिखें।
+2. कोई भी भाव या नंबर मन से / अनुमान से न बनाएं। केवल वही असली फसलें व भाव (₹ प्रति क्विंटल में) लिखें जो सर्च परिणामों में वास्तव में मिले हों।
+3. यदि किसी स्रोत में अनुबंध संख्या (contracts) या आवक (arrival) न दी हो तो वहाँ "-" लिखें।
+4. यदि आपको इस मंडी या जिले के हालिया वास्तविक मंडी भाव इंटरनेट पर बिल्कुल न मिलें, तो "found": false लौटाएँ।
+
+केवल नीचे दिए सटीक JSON प्रारूप में उत्तर दें (कोई अतिरिक्त टेक्स्ट या समझाइश बाहर न लिखें):
+{
+  "found": true,
+  "publishedDate": "${date}",
+  "isTodayExact": true,
+  "sourceName": "स्रोत पोर्टल का नाम (जैसे MP Mandi Board / Agmarknet / MandiBhavToday)",
+  "totalContracts": "-",
+  "totalArrival": "-",
+  "arrivalUnit": "${arrivalUnit}",
+  "rows": [
+    {
+      "cropName": "सोयाबीन",
+      "minPrice": 4200,
+      "maxPrice": 4850,
+      "modalPrice": 4650,
+      "contracts": "-",
+      "arrival": "-"
+    }
+  ]
+}`;
+
+      const { result: response, model: usedModel } = await generateWithModelFallback(
+        (model) =>
+          ai.models.generateContent({
+            model,
+            contents: searchPrompt,
+            config: {
+              tools: [{ googleSearch: {} }],
+              ...(model === 'gemini-4-hydrogen'
+                ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                : {}),
+            },
+          }),
+        ['gemini-3.1-flash-lite', 'gemini-4-hydrogen']
+      );
+
+      const rawText = (response.text ?? '').trim();
+      const cleanedJson = rawText
+        .replace(/^```json\s*/i, '')
+        .replace(/^```\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+
+      let parsed: any = null;
+      const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch {
+          parsed = null;
+        }
+      }
+
+      // If grounded response included prose or markdown instead of strict JSON, convert that grounded text cleanly via responseSchema
+      if (!parsed && rawText.length > 10) {
+        try {
+          const { result: structRes } = await generateWithModelFallback(
+            (model) =>
+              ai.models.generateContent({
+                model,
+                contents: `नीचे दिए गए सर्च परिणाम टेक्स्ट से मंडी भाव JSON निकालें। कोई भी संख्या मन से न जोड़ें।\n\nटेक्स्ट:\n${rawText.slice(0, 6000)}`,
+                config: {
+                  responseMimeType: 'application/json',
+                  responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                      found: { type: Type.BOOLEAN },
+                      publishedDate: { type: Type.STRING },
+                      isTodayExact: { type: Type.BOOLEAN },
+                      sourceName: { type: Type.STRING },
+                      totalContracts: { type: Type.STRING },
+                      totalArrival: { type: Type.STRING },
+                      arrivalUnit: { type: Type.STRING },
+                      rows: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            cropName: { type: Type.STRING },
+                            minPrice: { type: Type.NUMBER },
+                            maxPrice: { type: Type.NUMBER },
+                            modalPrice: { type: Type.NUMBER },
+                            contracts: { type: Type.STRING },
+                            arrival: { type: Type.STRING },
+                          },
+                          required: ['cropName', 'minPrice', 'maxPrice', 'modalPrice'],
+                        },
+                      },
+                    },
+                    required: ['found', 'publishedDate', 'rows'],
+                  },
+                },
+              }),
+            ['gemini-3.1-flash-lite', 'gemini-4-hydrogen']
+          );
+          parsed = JSON.parse((structRes.text ?? '{}').trim());
+        } catch {
+          parsed = null;
+        }
+      }
+
+      if (!parsed) {
+        negativeSyncCooldown.set(cacheKey, Date.now() + 10 * 60 * 1000);
+        return {
+          synced: false,
+          foundToday: false,
+          date,
+          message: `आज (${date}) का नया भाव पत्रक अभी ऑनलाइन उपलब्ध नहीं हो सका।`,
+        };
+      }
+
+      const publishedDate = normalizeSlashOrDashToDDMMYYYY(parsed.publishedDate || '') || '';
+      const rawRows: any[] = Array.isArray(parsed.rows) ? parsed.rows : [];
+
+      const validRows = rawRows
+        .map((r: any, idx: number) => {
+          const cropName = stripAngleBrackets(r.cropName || '').slice(0, 80);
+          const minP = Math.max(0, Math.round(Number(r.minPrice) || 0));
+          const maxP = Math.max(0, Math.round(Number(r.maxPrice) || 0));
+          let modP = Math.max(0, Math.round(Number(r.modalPrice) || 0));
+          if (modP === 0 && (minP > 0 || maxP > 0)) {
+            modP = Math.round(((minP || maxP) + (maxP || minP)) / 2);
+          }
+          const finalMin = minP > 0 ? minP : modP;
+          const finalMax = maxP > 0 ? maxP : modP;
+          const yPrice = matchPreviousPrice(cropName, prevPatrak || prevLatestAny);
+          return {
+            sNo: idx + 1,
+            cropName,
+            contracts:
+              typeof r.contracts === 'number' && r.contracts > 0
+                ? Math.round(r.contracts)
+                : typeof r.contracts === 'string' && /^\d+$/.test(r.contracts.trim())
+                ? Number(r.contracts.trim())
+                : '-',
+            arrival:
+              typeof r.arrival === 'number' && r.arrival > 0
+                ? Math.round(r.arrival)
+                : typeof r.arrival === 'string' && /^\d+(\.\d+)?$/.test(r.arrival.trim())
+                ? Number(r.arrival.trim())
+                : '-',
+            arrivalUnit: parsed.arrivalUnit === 'बोरी' ? 'बोरी' : parsed.arrivalUnit === 'क्विंटल' ? 'क्विंटल' : arrivalUnit,
+            minPrice: finalMin,
+            maxPrice: finalMax,
+            modalPrice: modP,
+            yesterdayPrice: yPrice,
+            priceChange: yPrice > 0 && modP > 0 ? modP - yPrice : 0,
+            msp: lookupMspForCrop(cropName),
+          };
+        })
+        .filter((r) => r.cropName.length > 0 && r.modalPrice >= 100 && r.modalPrice <= 100000);
+
+      if (!parsed.found || validRows.length === 0 || !publishedDate) {
+        negativeSyncCooldown.set(cacheKey, Date.now() + 15 * 60 * 1000);
+        return {
+          synced: false,
+          foundToday: false,
+          date,
+          message: `अभी (${date}) के लिए "${mandiName}" का नया आधिकारिक वेब पत्रक प्रकाशित नहीं मिला।`,
+        };
+      }
+
+      // Guard against saving dates older than what is already verified unless none existed
+      const pubSort = ddmmyyyyToSortable(publishedDate);
+      const prevSort = prevLatestAny ? ddmmyyyyToSortable(prevLatestAny.date) : '2026-11-16';
+      if (pubSort && prevSort && pubSort < prevSort && publishedDate !== date) {
+        negativeSyncCooldown.set(cacheKey, Date.now() + 15 * 60 * 1000);
+        return {
+          synced: false,
+          foundToday: false,
+          date,
+          message: `ऑनलाइन पोर्टल पर अभी तक (${publishedDate}) से नया भाव अपडेट नहीं आया है।`,
+        };
+      }
+
+      // Extract verified grounding URLs
+      const chunks: any[] =
+        response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const sourceUrls: Array<{ title: string; uri: string }> = [];
+      const seenUri = new Set<string>();
+      for (const ch of chunks) {
+        const uri = String(ch?.web?.uri || '').trim();
+        if (/^https?:\/\/.+/i.test(uri) && !seenUri.has(uri)) {
+          seenUri.add(uri);
+          sourceUrls.push({
+            title: stripAngleBrackets(ch?.web?.title || uri).slice(0, 80) || 'मंडी स्रोत',
+            uri: uri.slice(0, 500),
+          });
+          if (sourceUrls.length >= 5) break;
+        }
+      }
+
+      const sourceName = stripAngleBrackets(parsed.sourceName || 'लाइव मंडी वेब सिंक').slice(0, 80);
+      const unitOut: 'बोरी' | 'क्विंटल' =
+        parsed.arrivalUnit === 'बोरी' ? 'बोरी' : parsed.arrivalUnit === 'क्विंटल' ? 'क्विंटल' : arrivalUnit;
+
+      const totalContractsOut =
+        parsed.totalContracts !== undefined && parsed.totalContracts !== null && String(parsed.totalContracts).trim() !== ''
+          ? stripAngleBrackets(parsed.totalContracts).slice(0, 30)
+          : '-';
+      const totalArrivalOut =
+        parsed.totalArrival !== undefined && parsed.totalArrival !== null && String(parsed.totalArrival).trim() !== ''
+          ? stripAngleBrackets(parsed.totalArrival).slice(0, 30)
+          : '-';
+
+      const timeStr = `${String(istNow.getHours()).padStart(2, '0')}:${String(istNow.getMinutes()).padStart(2, '0')} IST`;
+      const savedEntry = {
+        mandiId,
+        date: publishedDate,
+        totalContracts: totalContractsOut,
+        totalArrival: totalArrivalOut,
+        arrivalUnit: unitOut,
+        releaseTime: `स्वतः लाइव वेब सिंक (${publishedDate} • ${sourceName} • ${timeStr})`,
+        sourceLabel: sourceName,
+        sourceUrls,
+        rows: validRows.map((r) => ({ ...r, arrivalUnit: unitOut })),
+        updatedAt: new Date().toISOString(),
+      };
+
+      writeSharedPatrak(`${mandiId}__${publishedDate}`, savedEntry);
+      negativeSyncCooldown.delete(cacheKey);
+
+      return {
+        synced: true,
+        foundToday: publishedDate === date,
+        date: publishedDate,
+        source: `${sourceName} (${usedModel})`,
+        sourceUrls,
+        patrak: savedEntry,
+        message:
+          publishedDate === date
+            ? `✅ आज (${publishedDate}) के ${validRows.length} जिंसों के ताज़ा भाव (${sourceName}) से स्वतः अद्यतित!`
+            : `✅ नवीनतम उपलब्ध मंडी पत्रक (${publishedDate} • ${validRows.length} जिंसें) स्वतः अद्यतित!`,
+      };
+    } catch (err: any) {
+      console.warn('Auto-sync search grounding error:', err?.status, err?.message || err);
+      negativeSyncCooldown.set(cacheKey, Date.now() + 2 * 60 * 1000);
+      return {
+        synced: false,
+        foundToday: false,
+        date,
+        source: `ERR_${err?.status || 'UNKNOWN'}`,
+        message: 'लाइव मंडी खोज अभी व्यस्त है — कृपया कुछ सेकंड बाद "ताज़ा करें" दबाएँ।',
+      };
+    }
+  })();
+
+  inFlightAutoSyncs.set(cacheKey, job);
+  try {
+    return await job;
+  } finally {
+    inFlightAutoSyncs.delete(cacheKey);
+  }
+}
+
+app.post('/api/mandi/auto-sync', aiRateLimiter, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const mandiId = stripAngleBrackets(body.mandiId || '');
+    if (!mandiId || !/^[a-zA-Z0-9_-]{2,100}$/.test(mandiId)) {
+      return res.status(400).json({ error: 'INVALID_MANDI_ID', message: 'अमान्य मंडी ID।' });
+    }
+    const mandiName = stripAngleBrackets(body.mandiName || 'गंजबासौदा कृषि उपज मंडी').slice(0, 150);
+    const district = stripAngleBrackets(body.district || 'विदिशा').slice(0, 100);
+    const state = stripAngleBrackets(body.state || 'मध्य प्रदेश').slice(0, 100);
+    const reqDate = normalizeSlashOrDashToDDMMYYYY(body.date || '') || formatServerDDMMYYYY(getServerIndianNow());
+    const arrivalUnit: 'बोरी' | 'क्विंटल' = body.arrivalUnit === 'क्विंटल' ? 'क्विंटल' : 'बोरी';
+    const force = Boolean(body.force);
+
+    const result = await performMandiAutoSync({
+      mandiId,
+      mandiName,
+      district,
+      state,
+      date: reqDate,
+      arrivalUnit,
+      force,
+    });
+    return res.json(result);
+  } catch (err: any) {
+    console.error('/api/mandi/auto-sync error:', err?.message || err);
+    return res.status(500).json({
+      synced: false,
+      foundToday: false,
+      message: 'मंडी भाव स्वतः सिंक करने में अस्थायी समस्या आई।',
+    });
+  }
+});
+
 app.get('/api/mandi/live-gov-sync', async (req, res) => {
   const apiKey = process.env.DATA_GOV_API_KEY;
   if (!apiKey) {
     return res.json({
       liveFetched: false,
       reason: 'NO_API_KEY',
-      message: 'आधिकारिक data.gov.in API Key सेट नहीं है (या सर्वर भारत से बाहर है)। फोटो स्कैन द्वारा पत्रक अपडेट उपलब्ध है।',
+      message: 'लाइव वेब ऑटो-सिंक सक्रिय है ("पोर्टल सिंक" या "ताज़ा करें" से सीधे आज के भाव प्राप्त होते हैं)।',
     });
   }
   try {
@@ -712,7 +1588,7 @@ app.get('/api/mandi/live-gov-sync', async (req, res) => {
     return res.json({
       liveFetched: false,
       reason: 'NETWORK_BLOCKED',
-      message: 'इस क्लाउड रीजन से data.gov.in कनेक्ट नहीं हो सका (भारतीय सर्वर पर होस्ट करने पर स्वतः जुड़ेगा)।',
+      message: 'data.gov.in से सीधा कनेक्शन नहीं मिला — लाइव वेब ऑटो-सिंक से भाव खोजे जा रहे हैं।',
     });
   }
 });
@@ -764,28 +1640,34 @@ Give direct, detailed, practical, and scientifically accurate farming advice in 
 3. Avoid generic filler; answer the exact question asked with crisp headings and bullet points.`;
 
 async function generateWithModelFallback<T>(
-  callForModel: (model: string) => Promise<T>
+  callForModel: (model: string) => Promise<T>,
+  preferredModels: string[] = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen']
 ): Promise<{ result: T; model: string }> {
-  const models = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
   let lastErr: any;
 
-  for (const model of models) {
-    try {
-      const result = await callForModel(model);
-      return { result, model };
-    } catch (err: any) {
-      lastErr = err;
-      const msg = String(err?.message || '');
-      const status = Number(err?.status || 0);
-      const isTransient =
-        status === 503 ||
-        status === 429 ||
-        status === 500 ||
-        status === 404 ||
-        /UNAVAILABLE|high demand|RESOURCE_EXHAUSTED|NOT_FOUND/i.test(msg);
-      if (!isTransient) {
-        throw err;
+  for (let pass = 0; pass < 2; pass++) {
+    for (const model of preferredModels) {
+      try {
+        const result = await callForModel(model);
+        return { result, model };
+      } catch (err: any) {
+        lastErr = err;
+        const msg = String(err?.message || '');
+        const status = Number(err?.status || 0);
+        const isTransient =
+          status === 503 ||
+          status === 429 ||
+          status === 500 ||
+          status === 404 ||
+          /UNAVAILABLE|high demand|RESOURCE_EXHAUSTED|NOT_FOUND/i.test(msg);
+        if (!isTransient) {
+          throw err;
+        }
+        await new Promise((r) => setTimeout(r, 650));
       }
+    }
+    if (pass === 0) {
+      await new Promise((r) => setTimeout(r, 900));
     }
   }
   throw lastErr;
@@ -1200,7 +2082,81 @@ export class ErrorOverlay {}
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Kisan Setu full-stack server running on http://0.0.0.0:${PORT}`);
+    startMandiBackgroundScheduler();
   });
+}
+
+const PRIORITY_AUTO_SYNC_MANDIS: Array<{
+  mandiId: string;
+  mandiName: string;
+  district: string;
+  state: string;
+  arrivalUnit: 'बोरी' | 'क्विंटल';
+}> = [
+  { mandiId: 'mp-vidisha-ganjbasoda', mandiName: 'गंजबासौदा (कृषि उपज मंडी)', district: 'विदिशा', state: 'मध्य प्रदेश', arrivalUnit: 'बोरी' },
+  { mandiId: 'mp-vidisha-vidisha', mandiName: 'विदिशा (मुख्य मंडी)', district: 'विदिशा', state: 'मध्य प्रदेश', arrivalUnit: 'क्विंटल' },
+  { mandiId: 'mp-vidisha-sironj', mandiName: 'सिरोंज (मुख्य मंडी)', district: 'विदिशा', state: 'मध्य प्रदेश', arrivalUnit: 'क्विंटल' },
+  { mandiId: 'mp-sehore-sehore', mandiName: 'सीहोर (मुख्य मंडी)', district: 'सीहोर', state: 'मध्य प्रदेश', arrivalUnit: 'क्विंटल' },
+  { mandiId: 'mp-bhopal-karond', mandiName: 'भोपाल करोंद मंडी', district: 'भोपाल', state: 'मध्य प्रदेश', arrivalUnit: 'क्विंटल' },
+  { mandiId: 'mp-raisen-raisen', mandiName: 'रायसेन (मुख्य मंडी)', district: 'रायसेन', state: 'मध्य प्रदेश', arrivalUnit: 'क्विंटल' },
+  { mandiId: 'mp-sagar-sagar', mandiName: 'सागर (मुख्य मंडी)', district: 'सागर', state: 'मध्य प्रदेश', arrivalUnit: 'क्विंटल' },
+  { mandiId: 'mp-neemuch-neemuch', mandiName: 'नीमच (मुख्य मंडी)', district: 'नीमच', state: 'मध्य प्रदेश', arrivalUnit: 'क्विंटल' },
+  { mandiId: 'mp-mandsaur-mandsaur', mandiName: 'मंदसौर (मुख्य मंडी)', district: 'मंदसौर', state: 'मध्य प्रदेश', arrivalUnit: 'क्विंटल' },
+];
+
+const schedulerWindowDone = new Set<string>();
+let schedulerRunning = false;
+
+async function runScheduledMandiAutoSync(): Promise<void> {
+  if (schedulerRunning) return;
+  if (!process.env.GEMINI_API_KEY && !process.env.DATA_GOV_API_KEY) return;
+
+  const ist = getServerIndianNow();
+  const day = ist.getDay(); // 0=Sun, 6=Sat
+  if (day === 0 || day === 6) return;
+
+  const mins = ist.getHours() * 60 + ist.getMinutes();
+  const slot = mins >= 17 * 60 + 35 ? 'evening' : mins >= 13 * 60 + 15 ? 'midday' : null;
+  if (!slot) return;
+
+  const todayStr = formatServerDDMMYYYY(ist);
+  schedulerRunning = true;
+  try {
+    for (const m of PRIORITY_AUTO_SYNC_MANDIS) {
+      const slotKey = `${todayStr}__${slot}__${m.mandiId}`;
+      if (schedulerWindowDone.has(slotKey)) continue;
+      schedulerWindowDone.add(slotKey);
+
+      const stored = readSharedPatraks()[`${m.mandiId}__${todayStr}`];
+      // Skip if already refreshed during evening slot or fresh in last 3h
+      if (stored && slot === 'midday') continue;
+
+      try {
+        await performMandiAutoSync({
+          ...m,
+          date: todayStr,
+          force: slot === 'evening',
+        });
+      } catch {
+        // continue with next mandi
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  } finally {
+    schedulerRunning = false;
+  }
+}
+
+function startMandiBackgroundScheduler(): void {
+  // Initial check 12s after startup so live Render instances catch up today's rates automatically
+  setTimeout(() => {
+    runScheduledMandiAutoSync().catch(() => {});
+  }, 12 * 1000);
+
+  // Periodic check every 15 minutes for 1:15 PM & 5:35 PM IST auto-sync windows
+  setInterval(() => {
+    runScheduledMandiAutoSync().catch(() => {});
+  }, 15 * 60 * 1000);
 }
 
 startServer();

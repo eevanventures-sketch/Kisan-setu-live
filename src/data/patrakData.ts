@@ -33,6 +33,8 @@ export interface MandiPatrak {
   arrivalUnit: 'क्विंटल' | 'बोरी';
   rows: MandiPatrakRow[];
   secretaryName: string;
+  sourceLabel?: string;
+  sourceUrls?: Array<{ title: string; uri: string }>;
 }
 
 import {
@@ -1073,6 +1075,8 @@ export interface SavedCustomPatrak {
   releaseTime: string;
   rows: MandiPatrakRow[];
   updatedAt: string;
+  sourceLabel?: string;
+  sourceUrls?: Array<{ title: string; uri: string }>;
 }
 
 export function getCustomPatrakMap(): Record<string, SavedCustomPatrak> {
@@ -1191,7 +1195,7 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
   const isGanjbasoda = mandiId === 'mp-vidisha-ganjbasoda';
   const isVidisha = mandiId === 'mp-vidisha-vidisha';
 
-  // Check if user scanned/saved an official daily patrak for this exact mandi & date
+  // Check if user scanned/saved or server auto-synced an official daily patrak for this exact mandi & date
   const customSaved = getCustomPatrak(mandiId, dateMeta.dateStr);
   if (customSaved) {
     return {
@@ -1205,6 +1209,8 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
       totalArrival: customSaved.totalArrival,
       arrivalUnit: customSaved.arrivalUnit === 'क्विंटल' ? 'क्विंटल' : customSaved.arrivalUnit === 'बोरी' ? 'बोरी' : base.arrivalUnit,
       rows: customSaved.rows,
+      sourceLabel: customSaved.sourceLabel,
+      sourceUrls: customSaved.sourceUrls,
     };
   }
 
