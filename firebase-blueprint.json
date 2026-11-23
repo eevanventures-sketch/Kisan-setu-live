@@ -160,6 +160,229 @@
         }
       },
       "required": ["email", "role"]
+    },
+    "BazaarListing": {
+      "title": "BazaarListing",
+      "description": "Community marketplace advertisement, agrochemical dealer promo, or farmer video reel.",
+      "type": "object",
+      "properties": {
+        "authorUid": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Authenticated author UID."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "sell_crop",
+            "rent_equipment",
+            "seeds_fertilizer",
+            "dairy_livestock",
+            "farm_experience",
+            "company_promo"
+          ],
+          "description": "Listing or reel category."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 150,
+          "description": "Listing headline."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 1000,
+          "description": "Product usage, crop condition, or offer details."
+        },
+        "price": {
+          "type": "number",
+          "description": "Price in INR (0 for free farm experience)."
+        },
+        "priceUnit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Unit label for price."
+        },
+        "quantity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Available quantity or note."
+        },
+        "location": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120,
+          "description": "Village, tehsil, or shop address."
+        },
+        "state": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60,
+          "description": "State name."
+        },
+        "sellerName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Farmer or dealer shop name."
+        },
+        "contactPhone": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 25,
+          "description": "Public business or trade contact number published with the listing."
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": ["image", "video"],
+          "description": "Whether media is photo or reel video."
+        },
+        "thumbnailData": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 250000,
+          "description": "Compressed JPEG thumbnail or image data URL."
+        },
+        "videoMediaId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128,
+          "description": "Reference ID to chunked video stored in bazaarVideoChunks."
+        },
+        "videoChunkCount": {
+          "type": "number",
+          "description": "Number of chunks for stored video."
+        },
+        "videoMimeType": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 60,
+          "description": "MIME type of stored video."
+        },
+        "externalVideoUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Optional external HTTPS or server media URL for video playback."
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120,
+          "description": "Agrochemical company or Krishi Seva Kendra brand."
+        },
+        "discountOffer": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120,
+          "description": "Promotional discount badge text."
+        },
+        "targetPestOrCrop": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150,
+          "description": "Target crop or pest."
+        },
+        "likesCount": {
+          "type": "number",
+          "description": "Community appreciation count."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when updated."
+        }
+      },
+      "required": [
+        "authorUid",
+        "type",
+        "title",
+        "description",
+        "price",
+        "priceUnit",
+        "quantity",
+        "location",
+        "state",
+        "sellerName",
+        "contactPhone",
+        "mediaType",
+        "thumbnailData",
+        "videoMediaId",
+        "videoChunkCount",
+        "videoMimeType",
+        "externalVideoUrl",
+        "companyName",
+        "discountOffer",
+        "targetPestOrCrop",
+        "likesCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BazaarVideoChunk": {
+      "title": "BazaarVideoChunk",
+      "description": "Chunked binary slice (<750KB) of an uploaded farmer/shopkeeper video reel.",
+      "type": "object",
+      "properties": {
+        "videoMediaId": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent video media identifier."
+        },
+        "chunkIndex": {
+          "type": "number",
+          "description": "Zero-based chunk index."
+        },
+        "totalChunks": {
+          "type": "number",
+          "description": "Total chunk count for this video."
+        },
+        "mimeType": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 60,
+          "description": "Video MIME type."
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 750000,
+          "description": "Base64 slice of video binary."
+        },
+        "authorUid": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": [
+        "videoMediaId",
+        "chunkIndex",
+        "totalChunks",
+        "mimeType",
+        "data",
+        "authorUid",
+        "createdAt"
+      ]
     }
   },
   "firestore": {
@@ -174,6 +397,14 @@
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminMember" },
       "description": "Allowlist of admin UIDs."
+    },
+    "/bazaarListings/{listingId}": {
+      "schema": { "$ref": "#/entities/BazaarListing" },
+      "description": "Shared public Kisan Bazaar listings, shopkeeper ads, and video reels."
+    },
+    "/bazaarVideoChunks/{chunkDocId}": {
+      "schema": { "$ref": "#/entities/BazaarVideoChunk" },
+      "description": "Immutable chunked video payloads for Kisan Bazaar reels."
     }
   }
 }

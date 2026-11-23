@@ -78,6 +78,62 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
+    function isValidBazaarListing(data) {
+      return data.keys().hasAll([
+          'authorUid', 'type', 'title', 'description', 'price', 'priceUnit',
+          'quantity', 'location', 'state', 'sellerName', 'contactPhone',
+          'mediaType', 'thumbnailData', 'videoMediaId', 'videoChunkCount',
+          'videoMimeType', 'externalVideoUrl', 'companyName', 'discountOffer',
+          'targetPestOrCrop', 'likesCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'authorUid', 'type', 'title', 'description', 'price', 'priceUnit',
+          'quantity', 'location', 'state', 'sellerName', 'contactPhone',
+          'mediaType', 'thumbnailData', 'videoMediaId', 'videoChunkCount',
+          'videoMimeType', 'externalVideoUrl', 'companyName', 'discountOffer',
+          'targetPestOrCrop', 'likesCount', 'createdAt', 'updatedAt'
+        ])
+        && data.authorUid is string && data.authorUid.size() >= 5 && data.authorUid.size() <= 128 && data.authorUid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.type in ['sell_crop', 'rent_equipment', 'seeds_fertilizer', 'dairy_livestock', 'farm_experience', 'company_promo']
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 150
+        && data.description is string && data.description.size() >= 2 && data.description.size() <= 1000
+        && (data.price is int || data.price is float) && data.price >= 0 && data.price <= 100000000
+        && data.priceUnit is string && data.priceUnit.size() >= 1 && data.priceUnit.size() <= 60
+        && data.quantity is string && data.quantity.size() >= 1 && data.quantity.size() <= 80
+        && data.location is string && data.location.size() >= 2 && data.location.size() <= 120
+        && data.state is string && data.state.size() >= 2 && data.state.size() <= 60
+        && data.sellerName is string && data.sellerName.size() >= 2 && data.sellerName.size() <= 100
+        && data.contactPhone is string && data.contactPhone.size() >= 6 && data.contactPhone.size() <= 25
+        && data.mediaType in ['image', 'video']
+        && data.thumbnailData is string && data.thumbnailData.size() <= 250000
+        && data.videoMediaId is string && data.videoMediaId.size() <= 128
+        && data.videoChunkCount is int && data.videoChunkCount >= 0 && data.videoChunkCount <= 20
+        && data.videoMimeType is string && data.videoMimeType.size() <= 60
+        && data.externalVideoUrl is string && data.externalVideoUrl.size() <= 500
+        && data.companyName is string && data.companyName.size() <= 120
+        && data.discountOffer is string && data.discountOffer.size() <= 120
+        && data.targetPestOrCrop is string && data.targetPestOrCrop.size() <= 150
+        && data.likesCount is int && data.likesCount >= 0 && data.likesCount <= 1000000
+        && data.updatedAt == request.time;
+    }
+
+    function isValidBazaarVideoChunk(data) {
+      return data.keys().hasAll([
+          'videoMediaId', 'chunkIndex', 'totalChunks', 'mimeType', 'data', 'authorUid', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'videoMediaId', 'chunkIndex', 'totalChunks', 'mimeType', 'data', 'authorUid', 'createdAt'
+        ])
+        && data.videoMediaId is string && data.videoMediaId.size() >= 2 && data.videoMediaId.size() <= 128 && data.videoMediaId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.chunkIndex is int && data.chunkIndex >= 0 && data.chunkIndex <= 20
+        && data.totalChunks is int && data.totalChunks >= 1 && data.totalChunks <= 20
+        && data.chunkIndex < data.totalChunks
+        && data.mimeType is string && data.mimeType.size() >= 3 && data.mimeType.size() <= 60
+        && data.data is string && data.data.size() >= 1 && data.data.size() <= 750000
+        && data.authorUid is string && data.authorUid == request.auth.uid && data.authorUid.size() >= 5 && data.authorUid.size() <= 128 && data.authorUid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.createdAt == request.time;
+    }
+
     // 4. Collection Rules
     match /mandiPatraks/{patrakId} {
       // Public agricultural price board (zero PII) so all farmers get 24/7 auto-sync
@@ -110,6 +166,40 @@ service cloud.firestore {
       allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
       allow list: if false;
       allow create, update, delete: if false;
+    }
+
+    match /bazaarListings/{listingId} {
+      // Public farmer & dealer marketplace feed
+      allow get: if isValidId(listingId);
+      allow list: if true;
+      allow create: if isValidId(listingId) && isVerifiedUser()
+        && isValidBazaarListing(incoming())
+        && incoming().authorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(listingId) && isVerifiedUser()
+        && isValidBazaarListing(incoming())
+        && incoming().authorUid == existing().authorUid
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Action 1: Owner or Admin updates listing details
+          ((isOwner(existing().authorUid) || isAdmin()) && incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'title', 'description', 'price', 'priceUnit', 'quantity',
+            'location', 'state', 'sellerName', 'contactPhone', 'mediaType',
+            'thumbnailData', 'companyName', 'discountOffer', 'targetPestOrCrop', 'updatedAt'
+          ])) ||
+          // Action 2: Community like increment (+1 only)
+          (incoming().likesCount == existing().likesCount + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt']))
+        );
+      allow delete: if isValidId(listingId) && (isOwner(existing().authorUid) || isAdmin());
+    }
+
+    match /bazaarVideoChunks/{chunkDocId} {
+      allow get: if isValidId(chunkDocId);
+      allow list: if true;
+      allow create: if isValidId(chunkDocId) && isVerifiedUser() && isValidBazaarVideoChunk(incoming());
+      allow update: if false;
+      allow delete: if isValidId(chunkDocId) && (isOwner(existing().authorUid) || isAdmin());
     }
   }
 }

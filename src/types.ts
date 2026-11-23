@@ -90,6 +90,15 @@ export interface MarketListing {
   companyName?: string;
   discountOffer?: string;
   targetPestOrCrop?: string;
+  // Cloud & shared media persistence metadata
+  authorUid?: string;
+  videoMediaId?: string;
+  videoChunkCount?: number;
+  videoMimeType?: string;
+  externalVideoUrl?: string;
+  isCloudPost?: boolean;
+  isDemo?: boolean;
+  createdAtMs?: number;
 }
 
 export interface LedgerEntry {

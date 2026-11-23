@@ -13,7 +13,7 @@ const PORT =
     ? Number(process.env.PORT)
     : 3000;
 
-app.use(express.json({ limit: '25mb' }));
+app.use(express.json({ limit: '35mb' }));
 
 // CORS headers so installed PWA / GitHub Pages builds can call live /api/* endpoints
 app.use('/api', (req, res, next) => {
@@ -35,7 +35,7 @@ app.use('/api', (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
@@ -244,6 +244,276 @@ function writeSharedPatrak(key: string, entry: any): void {
 
 app.get('/api/mandi/shared-patraks', (_req, res) => {
   res.json({ patraks: readSharedPatraks() });
+});
+
+// Shared server-side Kisan Bazaar listings & Reels media persistence
+// Ensures every farmer/shopkeeper sees submitted ads & videos across devices even without Google Sign-In
+const SHARED_BAZAAR_FILE = path.join(SHARED_PATRAK_DIR, 'bazaar-listings.json');
+const SHARED_BAZAAR_MEDIA_DIR = path.join(SHARED_PATRAK_DIR, 'bazaar-media');
+
+function ensureBazaarStorage(): void {
+  if (!fs.existsSync(SHARED_PATRAK_DIR)) {
+    fs.mkdirSync(SHARED_PATRAK_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(SHARED_BAZAAR_MEDIA_DIR)) {
+    fs.mkdirSync(SHARED_BAZAAR_MEDIA_DIR, { recursive: true });
+  }
+}
+
+function readSharedBazaarListings(): any[] {
+  try {
+    if (!fs.existsSync(SHARED_BAZAAR_FILE)) return [];
+    const raw = fs.readFileSync(SHARED_BAZAAR_FILE, 'utf-8');
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeSharedBazaarListings(items: any[]): void {
+  ensureBazaarStorage();
+  fs.writeFileSync(SHARED_BAZAAR_FILE, JSON.stringify(items.slice(0, 80), null, 2), 'utf-8');
+}
+
+function getExtForMime(mimeType: string): string {
+  const m = (mimeType || '').toLowerCase();
+  if (m.includes('webm')) return 'webm';
+  if (m.includes('quicktime') || m.includes('mov')) return 'mov';
+  if (m.includes('3gpp') || m.includes('3gp')) return '3gp';
+  if (m.includes('x-matroska') || m.includes('mkv')) return 'mkv';
+  if (m.includes('mp4')) return 'mp4';
+  if (m.includes('png')) return 'png';
+  if (m.includes('webp')) return 'webp';
+  if (m.includes('jpeg') || m.includes('jpg')) return 'jpg';
+  if (m.startsWith('video/')) return 'mp4';
+  if (m.startsWith('image/')) return 'jpg';
+  return 'mp4';
+}
+
+function getMimeForExt(file: string): string {
+  const ext = path.extname(file).toLowerCase();
+  switch (ext) {
+    case '.mp4':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
+    case '.mov':
+      return 'video/quicktime';
+    case '.3gp':
+      return 'video/3gpp';
+    case '.mkv':
+      return 'video/x-matroska';
+    case '.png':
+      return 'image/png';
+    case '.webp':
+      return 'image/webp';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+app.get('/api/bazaar/listings', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ listings: readSharedBazaarListings() });
+});
+
+app.post('/api/bazaar/media', (req, res) => {
+  try {
+    const { base64, mimeType } = req.body || {};
+    if (!base64 || typeof base64 !== 'string') {
+      return res.status(400).json({ error: 'Media payload is required' });
+    }
+    const cleanB64 = base64.includes(',') ? base64.split(',')[1] : base64;
+    const buffer = Buffer.from(cleanB64, 'base64');
+    if (buffer.length === 0) {
+      return res.status(400).json({ error: 'Empty media file' });
+    }
+    if (buffer.length > 22 * 1024 * 1024) {
+      return res.status(413).json({
+        error: 'MEDIA_TOO_LARGE',
+        message: 'वीडियो साइज 22 MB से कम रखें (लगभग 30-45 सेकंड की रील)।',
+      });
+    }
+
+    ensureBazaarStorage();
+    const ext = getExtForMime(String(mimeType || 'video/mp4'));
+    const fileName = `med_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const targetPath = path.join(SHARED_BAZAAR_MEDIA_DIR, fileName);
+    fs.writeFileSync(targetPath, buffer);
+
+    return res.json({
+      mediaId: fileName,
+      url: `/api/bazaar/media/${fileName}`,
+      mimeType: getMimeForExt(fileName),
+      size: buffer.length,
+    });
+  } catch (err: any) {
+    console.error('Bazaar media upload error:', err?.message || err);
+    return res.status(500).json({ error: 'वीडियो सेव करने में त्रुटि आई।' });
+  }
+});
+
+app.get('/api/bazaar/media/:file', (req, res) => {
+  const file = String(req.params.file || '');
+  if (!/^[a-zA-Z0-9_.-]+$/.test(file)) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  const filePath = path.join(SHARED_BAZAAR_MEDIA_DIR, file);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Media not found' });
+  }
+
+  const stat = fs.statSync(filePath);
+  const fileSize = stat.size;
+  const contentType = getMimeForExt(file);
+  const range = req.headers.range;
+
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    if (isNaN(start) || isNaN(end) || start >= fileSize || end >= fileSize || start > end) {
+      res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
+      return res.end();
+    }
+    const chunkSize = end - start + 1;
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+    res.setHeader('Content-Length', chunkSize.toString());
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+  } else {
+    res.status(200);
+    res.setHeader('Content-Length', fileSize.toString());
+    fs.createReadStream(filePath).pipe(res);
+  }
+});
+
+app.post('/api/bazaar/listings', (req, res) => {
+  try {
+    const body = req.body || {};
+    const titleStr = typeof body.title === 'string' ? body.title : body.title?.hi || '';
+    const sellerStr = String(body.sellerName || '').trim();
+    const phoneStr = String(body.phone || body.contactPhone || '').trim();
+    if (!titleStr.trim() || !sellerStr || !phoneStr) {
+      return res.status(400).json({
+        error: 'MISSING_FIELDS',
+        message: 'शीर्षक, नाम और मोबाइल नंबर अनिवार्य हैं।',
+      });
+    }
+
+    const cleanId =
+      typeof body.id === 'string' && /^[a-zA-Z0-9_-]{3,100}$/.test(body.id)
+        ? body.id
+        : `srv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    const locText =
+      typeof body.location === 'string'
+        ? body.location
+        : body.location?.hi || 'विदिशा, मध्य प्रदेश';
+    const stateText =
+      typeof body.state === 'string' ? body.state : body.state?.hi || 'मध्य प्रदेश';
+    const unitText =
+      typeof body.priceUnit === 'string' ? body.priceUnit : body.priceUnit?.hi || '₹';
+    const descText =
+      typeof body.description === 'string'
+        ? body.description
+        : body.description?.hi || 'संपर्क करें।';
+
+    const entry = {
+      id: cleanId,
+      authorUid: body.authorUid || undefined,
+      title: { hi: titleStr.trim().slice(0, 150), en: titleStr.trim().slice(0, 150) },
+      type: body.type || 'sell_crop',
+      price: Math.max(0, Number(body.price) || 0),
+      priceUnit: { hi: String(unitText).slice(0, 60), en: String(unitText).slice(0, 60) },
+      quantity: String(body.quantity || 'उपलब्ध').slice(0, 80),
+      location: { hi: String(locText).slice(0, 120), en: String(locText).slice(0, 120) },
+      state: { hi: String(stateText).slice(0, 60), en: String(stateText).slice(0, 60) },
+      sellerName: sellerStr.slice(0, 100),
+      phone: phoneStr.slice(0, 25),
+      date:
+        typeof body.date === 'string' && body.date
+          ? body.date
+          : new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }),
+      imageUrl: String(body.imageUrl || '').slice(0, 350000),
+      mediaType: body.mediaType === 'video' ? 'video' : 'image',
+      videoUrl: typeof body.videoUrl === 'string' ? body.videoUrl.slice(0, 500) : undefined,
+      videoMediaId: typeof body.videoMediaId === 'string' ? body.videoMediaId : undefined,
+      videoChunkCount: Number(body.videoChunkCount) || 0,
+      videoMimeType: typeof body.videoMimeType === 'string' ? body.videoMimeType : undefined,
+      externalVideoUrl:
+        typeof body.externalVideoUrl === 'string' ? body.externalVideoUrl.slice(0, 500) : undefined,
+      description: { hi: String(descText).slice(0, 1000), en: String(descText).slice(0, 1000) },
+      verified: true,
+      isCompanyPromo: body.type === 'company_promo',
+      companyName: body.companyName ? String(body.companyName).slice(0, 120) : undefined,
+      discountOffer: body.discountOffer ? String(body.discountOffer).slice(0, 120) : undefined,
+      targetPestOrCrop: body.targetPestOrCrop
+        ? String(body.targetPestOrCrop).slice(0, 150)
+        : undefined,
+      likes: Number(body.likes) || 1,
+      isCloudPost: true,
+      isDemo: false,
+      createdAtMs: Number(body.createdAtMs) || Date.now(),
+    };
+
+    const existing = readSharedBazaarListings().filter((x) => x.id !== entry.id);
+    const updated = [entry, ...existing];
+    writeSharedBazaarListings(updated);
+    return res.json({ listing: entry });
+  } catch (err: any) {
+    console.error('Bazaar post save error:', err?.message || err);
+    return res.status(500).json({ error: 'पोस्ट सेव करने में त्रुटि आई।' });
+  }
+});
+
+app.post('/api/bazaar/listings/:id/like', (req, res) => {
+  const id = String(req.params.id || '');
+  const list = readSharedBazaarListings();
+  const idx = list.findIndex((x) => x.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Listing not found' });
+  }
+  list[idx].likes = (Number(list[idx].likes) || 0) + 1;
+  writeSharedBazaarListings(list);
+  return res.json({ likes: list[idx].likes });
+});
+
+app.delete('/api/bazaar/listings/:id', (req, res) => {
+  const id = String(req.params.id || '');
+  const list = readSharedBazaarListings();
+  const target = list.find((x) => x.id === id);
+  if (!target) {
+    return res.status(404).json({ error: 'Listing not found' });
+  }
+  const remaining = list.filter((x) => x.id !== id);
+  writeSharedBazaarListings(remaining);
+
+  if (
+    typeof target.videoUrl === 'string' &&
+    target.videoUrl.startsWith('/api/bazaar/media/')
+  ) {
+    const file = target.videoUrl.replace('/api/bazaar/media/', '');
+    if (/^[a-zA-Z0-9_.-]+$/.test(file)) {
+      const fPath = path.join(SHARED_BAZAAR_MEDIA_DIR, file);
+      if (fs.existsSync(fPath)) {
+        try {
+          fs.unlinkSync(fPath);
+        } catch {
+          // ignore cleanup failure
+        }
+      }
+    }
+  }
+  return res.json({ deleted: true });
 });
 
 app.get('/api/mandi/live-gov-sync', async (req, res) => {
