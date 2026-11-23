@@ -3,17 +3,17 @@ import { User } from 'firebase/auth';
 import { useLanguage } from '../context/LanguageContext';
 import { mockMarketListings } from '../data/mockData';
 import { MarketListing } from '../types';
-import { fetchApi, getApiUrl } from '../utils/apiBase';
+import { fetchApi } from '../utils/apiBase';
 import {
   subscribeToAuth,
   signInWithGooglePopup,
   subscribeToBazaarListings,
   publishBazaarListingToCloud,
-  loadCloudBazaarVideoUrl,
   likeBazaarListingInCloud,
   deleteBazaarListingInCloud,
   isVerifiedAdminUser,
 } from '../firebase';
+import { ReelsViewerModal } from './ReelsViewerModal';
 import {
   Phone,
   PlusCircle,
@@ -41,7 +41,14 @@ import {
   ChevronUp,
   Link as LinkIcon,
   Video,
+  Maximize2,
 } from 'lucide-react';
+
+const SAFE_CROP_SVG =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="450" viewBox="0 0 600 450"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#065f46"/><stop offset="100%" stop-color="#064e3b"/></linearGradient></defs><rect width="600" height="450" fill="url(#g)"/><text x="300" y="215" text-anchor="middle" fill="#fde68a" font-family="sans-serif" font-size="34" font-weight="bold">किसान सेतु बाज़ार</text><text x="300" y="255" text-anchor="middle" fill="#d1fae5" font-family="sans-serif" font-size="18">कृषि उत्पाद एवं प्रचार</text></svg>'
+  );
 
 const LOCAL_LISTINGS_KEY = 'kisan_setu_bazaar_my_posts_v5';
 const OWNED_IDS_KEY = 'kisan_setu_bazaar_owned_ids_v1';
@@ -131,19 +138,6 @@ function extractVideoThumbnailDataUrl(file: File): Promise<string> {
   });
 }
 
-function getYouTubeEmbedUrl(url?: string): string | null {
-  if (!url) return null;
-  const trimmed = url.trim();
-  const match =
-    trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/) ||
-    trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/) ||
-    trimmed.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
-  if (match && match[1]) {
-    return `https://www.youtube.com/embed/${match[1]}?autoplay=1&rel=0`;
-  }
-  return null;
-}
-
 export const KisanBazaar: React.FC = () => {
   const { language } = useLanguage();
 
@@ -174,11 +168,12 @@ export const KisanBazaar: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showDemoExamples, setShowDemoExamples] = useState(false);
 
-  // Video playback state per card
-  const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  // Video playback & Fullscreen Reels Viewer state
   const [resolvedVideoUrls, setResolvedVideoUrls] = useState<Record<string, string>>({});
-  const [loadingVideoId, setLoadingVideoId] = useState<string | null>(null);
-  const [videoLoadError, setVideoLoadError] = useState<Record<string, string>>({});
+  const [reelsModal, setReelsModal] = useState<{
+    reels: MarketListing[];
+    initialIndex: number;
+  } | null>(null);
 
   // Post Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -502,16 +497,11 @@ export const KisanBazaar: React.FC = () => {
 
     const isExp = newType === 'farm_experience';
     const isCompany = newType === 'company_promo';
-    const defaultImg = isCompany
-      ? 'https://images.unsplash.com/photo-1589923188900-85dae523342b?auto=format&fit=crop&w=600&q=80'
-      : newType === 'rent_equipment'
-      ? 'https://images.unsplash.com/photo-1530267981375-f0de937f5f13?auto=format&fit=crop&w=600&q=80'
-      : 'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=600&q=80';
 
     const chosenThumb =
       mediaType === 'image'
-        ? mediaUrl || defaultImg
-        : videoThumbData || defaultImg;
+        ? mediaUrl || SAFE_CROP_SVG
+        : videoThumbData || SAFE_CROP_SVG;
 
     const unitLabel = isExp
       ? 'निःशुल्क अनुभव'
@@ -681,52 +671,26 @@ export const KisanBazaar: React.FC = () => {
     }
   };
 
-  const handlePlayVideo = async (item: MarketListing) => {
-    setVideoLoadError((prev) => {
-      const copy = { ...prev };
-      delete copy[item.id];
-      return copy;
-    });
+  const isVideoItem = (item: MarketListing) =>
+    item.mediaType === 'video' ||
+    !!item.videoUrl ||
+    !!item.videoMediaId ||
+    !!item.externalVideoUrl;
 
-    if (resolvedVideoUrls[item.id]) {
-      setActiveVideoId(item.id);
-      return;
-    }
+  const openFullscreenReels = (clickedItem?: MarketListing) => {
+    const realReels = realListings.filter(isVideoItem);
+    const demoReels = demoListings.filter(isVideoItem);
+    const combinedReels = [...realReels, ...demoReels];
+    if (combinedReels.length === 0) return;
 
-    if (item.videoUrl) {
-      const playUrl = item.videoUrl.startsWith('/api/') ? getApiUrl(item.videoUrl) : item.videoUrl;
-      setResolvedVideoUrls((prev) => ({ ...prev, [item.id]: playUrl }));
-      setActiveVideoId(item.id);
-      return;
-    }
+    const idx = clickedItem
+      ? Math.max(
+          0,
+          combinedReels.findIndex((r) => r.id === clickedItem.id)
+        )
+      : 0;
 
-    if (item.externalVideoUrl) {
-      setResolvedVideoUrls((prev) => ({ ...prev, [item.id]: item.externalVideoUrl! }));
-      setActiveVideoId(item.id);
-      return;
-    }
-
-    if (item.videoMediaId) {
-      setLoadingVideoId(item.id);
-      try {
-        const blobUrl = await loadCloudBazaarVideoUrl(item.videoMediaId, item.videoMimeType);
-        setResolvedVideoUrls((prev) => ({ ...prev, [item.id]: blobUrl }));
-        setActiveVideoId(item.id);
-      } catch {
-        setVideoLoadError((prev) => ({
-          ...prev,
-          [item.id]: 'यह वीडियो अभी लोड नहीं हो सका। कृपया इंटरनेट जांचकर दोबारा प्रयास करें।',
-        }));
-      } finally {
-        setLoadingVideoId(null);
-      }
-      return;
-    }
-
-    setVideoLoadError((prev) => ({
-      ...prev,
-      [item.id]: 'इस पोस्ट की वीडियो फ़ाइल उपलब्ध नहीं है।',
-    }));
+    setReelsModal({ reels: combinedReels, initialIndex: idx });
   };
 
   const handleLikeListing = async (item: MarketListing) => {
@@ -771,21 +735,12 @@ export const KisanBazaar: React.FC = () => {
     window.open(whatsappUrl, '_blank', 'noopener');
   };
 
-  const reelsCount = realListings.filter(
-    (l) => l.mediaType === 'video' || !!l.videoUrl || !!l.videoMediaId || !!l.externalVideoUrl
-  ).length;
+  const reelsCount = realListings.filter(isVideoItem).length;
 
   const renderCard = (item: MarketListing) => {
     const isExp = item.type === 'farm_experience';
     const isCompany = item.type === 'company_promo';
-    const hasVideo =
-      item.mediaType === 'video' ||
-      !!item.videoUrl ||
-      !!item.videoMediaId ||
-      !!item.externalVideoUrl;
-    const isPlaying = activeVideoId === item.id;
-    const playUrl = resolvedVideoUrls[item.id];
-    const ytEmbed = getYouTubeEmbedUrl(playUrl || item.externalVideoUrl);
+    const hasVideo = isVideoItem(item);
     const digits = cleanDigits(item.phone);
     const canDelete =
       !item.isDemo &&
@@ -805,70 +760,68 @@ export const KisanBazaar: React.FC = () => {
         }`}
       >
         <div>
-          {/* Media banner (Photo or Interactive Video/Reel Player) */}
-          <div className="relative h-52 w-full bg-black overflow-hidden group">
-            {hasVideo && isPlaying && ytEmbed ? (
-              <iframe
-                src={ytEmbed}
-                title={item.title[language]}
-                className="w-full h-full border-0"
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-              />
-            ) : hasVideo && isPlaying && playUrl ? (
-              <video
-                src={playUrl}
-                controls
-                autoPlay
-                playsInline
-                preload="metadata"
-                className="w-full h-full object-contain bg-black"
-              />
-            ) : (
+          {/* Large Instagram / Facebook Style Media Frame */}
+          <div
+            onClick={hasVideo ? () => openFullscreenReels(item) : undefined}
+            className={`relative w-full bg-neutral-950 overflow-hidden group ${
+              hasVideo
+                ? 'h-[400px] sm:h-[440px] cursor-pointer'
+                : 'h-64 sm:h-72'
+            }`}
+          >
+            <img
+              src={item.imageUrl || SAFE_CROP_SVG}
+              alt={item.title[language]}
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = SAFE_CROP_SVG;
+              }}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+
+            {/* Measured gradient scrim for text legibility */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-black/35 pointer-events-none" />
+
+            {hasVideo && (
               <>
-                <img
-                  src={
-                    item.imageUrl ||
-                    'https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=600&q=80'
-                  }
-                  alt={item.title[language]}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
-                />
-                {hasVideo && (
-                  <button
-                    type="button"
-                    onClick={() => handlePlayVideo(item)}
-                    disabled={loadingVideoId === item.id}
-                    className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-rose-600/95 hover:bg-rose-700 text-white flex items-center justify-center shadow-xl hover:scale-110 transition-transform cursor-pointer border-2 border-white"
-                    title="रील / वीडियो चलाएं"
-                  >
-                    {loadingVideoId === item.id ? (
-                      <Loader2 className="w-6 h-6 animate-spin" />
-                    ) : (
-                      <Play className="w-7 h-7 fill-white ml-0.5" />
-                    )}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openFullscreenReels(item);
+                  }}
+                  className="absolute inset-0 m-auto w-16 h-16 rounded-full bg-rose-600/95 hover:bg-rose-700 text-white flex items-center justify-center shadow-2xl hover:scale-110 transition-transform cursor-pointer border-2 border-white"
+                  title="इंस्टाग्राम/फेसबुक जैसी बड़ी रील चलाएं"
+                >
+                  <Play className="w-8 h-8 fill-white ml-1" />
+                </button>
+
+                <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-2 text-white pointer-events-none">
+                  <span className="px-2.5 py-1 rounded-lg bg-black/70 backdrop-blur-xs text-xs font-black flex items-center gap-1.5 border border-white/20">
+                    <Maximize2 className="w-3.5 h-3.5 text-amber-300" />
+                    <span>फुल-स्क्रीन रील देखें (स्वाइप ↕️)</span>
+                  </span>
+                </div>
               </>
             )}
 
-            {/* Category Badge */}
+            {/* Category Label */}
             <span
-              className={`absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase backdrop-blur-xs ${
+              className={`absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-md text-[11px] font-black backdrop-blur-xs ${
                 isCompany
-                  ? 'bg-purple-900 text-amber-300 border border-purple-400'
+                  ? 'bg-purple-900/90 text-amber-300 border border-purple-400'
                   : isExp
-                  ? 'bg-amber-500 text-emerald-950 font-black'
-                  : 'bg-emerald-950/85 text-amber-300'
+                  ? 'bg-amber-400 text-emerald-950 font-black'
+                  : 'bg-emerald-950/90 text-amber-300'
               }`}
             >
               {isCompany
                 ? hasVideo
-                  ? '🎬 दुकानदार रील / कंपनी प्रचार'
-                  : '🧪 कृषि सेवा केंद्र / प्रचार'
+                  ? '🎬 दुकानदार रील / प्रचार'
+                  : '🧪 कृषि सेवा केंद्र'
                 : isExp
                 ? hasVideo
-                  ? '🎬 किसान वीडियो रील'
+                  ? '🎬 किसान रील'
                   : '💡 फसल अनुभव'
                 : item.type === 'rent_equipment'
                 ? '🚜 यंत्र किराया'
@@ -879,34 +832,18 @@ export const KisanBazaar: React.FC = () => {
                 : '🌱 बीज व खाद'}
             </span>
 
-            {/* Right badge: Live vs Demo */}
+            {/* Right label: Live vs Demo */}
             {item.isDemo ? (
-              <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-800/90 text-gray-200">
+              <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-900/90 text-gray-200">
                 उदाहरण (Demo)
               </span>
             ) : (
               <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-600 text-white flex items-center gap-1 shadow-xs">
                 <ShieldCheck className="w-3 h-3" />
-                <span>लाइव पोस्ट</span>
+                <span>लाइव</span>
               </span>
             )}
           </div>
-
-          {videoLoadError[item.id] && (
-            <div className="px-3 py-1.5 bg-rose-50 text-rose-800 text-[11px] font-bold border-b border-rose-200 flex items-center justify-between gap-2">
-              <span>{videoLoadError[item.id]}</span>
-              {item.externalVideoUrl && (
-                <a
-                  href={item.externalVideoUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline text-rose-900 shrink-0"
-                >
-                  लिंक खोलें
-                </a>
-              )}
-            </div>
-          )}
 
           {/* Content */}
           <div className="p-4">
@@ -1119,8 +1056,17 @@ export const KisanBazaar: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
+              onClick={() => openFullscreenReels()}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black text-xs sm:text-sm transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+            >
+              <Play className="w-4 h-4 fill-emerald-950" />
+              <span>▶️ बड़ी रील्स देखें (Insta जैसा)</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => openPostModal('reel')}
-              className="px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs sm:text-sm transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs sm:text-sm transition-all flex items-center gap-2 shadow-xs cursor-pointer"
             >
               <Film className="w-4 h-4 text-amber-300" />
               <span>🎬 + नई रील / वीडियो डालें</span>
@@ -1129,7 +1075,7 @@ export const KisanBazaar: React.FC = () => {
             <button
               type="button"
               onClick={() => openPostModal('general')}
-              className="px-4 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs sm:text-sm transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs sm:text-sm transition-all flex items-center gap-2 shadow-xs cursor-pointer"
             >
               <PlusCircle className="w-4 h-4 text-amber-300" />
               <span>+ विज्ञापन / दुकान प्रचार पोस्ट करें</span>
@@ -1287,41 +1233,48 @@ export const KisanBazaar: React.FC = () => {
         </div>
       )}
 
-      {/* Dedicated Reels Upload Banner when user clicks the Reels tab */}
+      {/* Dedicated Reels Upload & Fullscreen Launch Banner when user clicks the Reels tab */}
       {selectedType === 'reels' && (
-        <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-amber-800 rounded-2xl p-5 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-amber-800 rounded-2xl p-5 text-white shadow-md flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 text-amber-300 text-xs font-black mb-1">
               <Video className="w-4 h-4" />
-              <span>किसान रील्स व वीडियो प्रचार</span>
+              <span>किसान रील्स व वीडियो प्रचार (इंस्टा / फेसबुक जैसा)</span>
             </div>
             <h3 className="text-lg sm:text-xl font-black">
-              अपनी फसल, ट्रैक्टर या कृषि दुकान का वीडियो अभी अपलोड करें!
+              बड़ी फुल-स्क्रीन रील्स देखें या अपने खेत/दुकान का वीडियो अपलोड करें!
             </h3>
             <p className="text-xs text-rose-100 mt-1">
-              फोन के कैमरे से सीधी रील बनाएं या गैलरी से वीडियो चुनें — हर किसान भाई इसे यहाँ देख
-              सकेगा।
+              रील पर टैप करते ही पूरा वीडियो इंस्टाग्राम व फेसबुक की तरह बड़ी स्क्रीन पर चलेगा — ऊपर
+              स्वाइप करके अगली रील देख सकते हैं।
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => openPostModal('reel')}
-            className="px-5 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-rose-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer shrink-0 transition-transform active:scale-95"
-          >
-            <Film className="w-4 h-4" />
-            <span>+ रील / वीडियो अपलोड करें</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => openFullscreenReels()}
+              className="min-h-[44px] px-5 py-3 rounded-xl bg-white hover:bg-amber-50 text-rose-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-transform active:scale-95"
+            >
+              <Play className="w-4 h-4 fill-rose-700 text-rose-700" />
+              <span>▶️ बड़ी रील्स चलाएं</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openPostModal('reel')}
+              className="min-h-[44px] px-5 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-rose-950 font-black text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition-transform active:scale-95"
+            >
+              <Film className="w-4 h-4" />
+              <span>+ रील अपलोड करें</span>
+            </button>
+          </div>
         </div>
       )}
 
       {/* LIVE COMMUNITY FEED */}
       <div>
         <div className="flex items-center justify-between mb-3 px-1">
-          <h3 className="text-sm sm:text-base font-black text-emerald-950 flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 animate-pulse" />
-            <span>
-              किसानों व दुकानदारों की लाइव पोस्ट ({filteredRealListings.length})
-            </span>
+          <h3 className="text-sm sm:text-base font-black text-emerald-950">
+            किसानों व दुकानदारों की लाइव पोस्ट ({filteredRealListings.length})
           </h3>
         </div>
 
@@ -1352,16 +1305,32 @@ export const KisanBazaar: React.FC = () => {
               <button
                 type="button"
                 onClick={() => openPostModal(selectedType === 'reels' ? 'reel' : 'general')}
-                className="px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs sm:text-sm cursor-pointer shadow-xs"
+                className="min-h-[44px] px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs sm:text-sm cursor-pointer shadow-xs"
               >
                 {selectedType === 'reels'
                   ? '🎬 पहली रील / वीडियो अपलोड करें'
                   : '+ पहला विज्ञापन / दुकान प्रचार डालें'}
               </button>
+              {selectedType === 'reels' && (
+                <button
+                  type="button"
+                  onClick={() => openFullscreenReels()}
+                  className="min-h-[44px] px-5 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs sm:text-sm cursor-pointer shadow-xs flex items-center gap-1.5"
+                >
+                  <Play className="w-4 h-4 fill-white" />
+                  <span>▶️ बड़ी रील्स चलाकर देखें</span>
+                </button>
+              )}
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div
+            className={`grid gap-5 ${
+              selectedType === 'reels'
+                ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+            }`}
+          >
             {filteredRealListings.map(renderCard)}
           </div>
         )}
@@ -1840,6 +1809,24 @@ export const KisanBazaar: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Full-Screen Instagram/Facebook-style Vertical Reels Player */}
+      {reelsModal && (
+        <ReelsViewerModal
+          reels={reelsModal.reels}
+          initialIndex={reelsModal.initialIndex}
+          language={language}
+          resolvedVideoUrls={resolvedVideoUrls}
+          onResolveVideoUrl={(id, url) =>
+            setResolvedVideoUrls((prev) => ({ ...prev, [id]: url }))
+          }
+          likedIds={likedIds}
+          onLike={handleLikeListing}
+          onShare={handleShareListing}
+          onUploadReel={() => openPostModal('reel')}
+          onClose={() => setReelsModal(null)}
+        />
       )}
     </div>
   );
