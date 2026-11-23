@@ -134,6 +134,27 @@ service cloud.firestore {
         && data.createdAt == request.time;
     }
 
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'email', 'photoUrl',
+          'village', 'district', 'state', 'phone', 'role', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'email', 'photoUrl',
+          'village', 'district', 'state', 'phone', 'role', 'createdAt', 'updatedAt'
+        ])
+        && data.uid is string && data.uid == request.auth.uid && data.uid == userId
+        && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 100
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 150
+        && data.photoUrl is string && data.photoUrl.size() <= 500
+        && data.village is string && data.village.size() <= 100
+        && data.district is string && data.district.size() <= 100
+        && data.state is string && data.state.size() <= 100
+        && data.phone is string && data.phone.size() <= 25
+        && data.role in ['farmer', 'admin']
+        && data.updatedAt == request.time;
+    }
+
     // 4. Collection Rules
     match /mandiPatraks/{patrakId} {
       // Public agricultural price board (zero PII) so all farmers get 24/7 auto-sync
@@ -200,6 +221,27 @@ service cloud.firestore {
       allow create: if isValidId(chunkDocId) && isVerifiedUser() && isValidBazaarVideoChunk(incoming());
       allow update: if false;
       allow delete: if isValidId(chunkDocId) && (isOwner(existing().authorUid) || isAdmin());
+    }
+
+    match /users/{userId} {
+      // Strict PII isolation: only profile owner or verified admin can read; never listable
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if false;
+      allow create: if isValidId(userId) && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().role == 'farmer'
+        && incoming().email == request.auth.token.email
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(userId) && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().role == existing().role
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'photoUrl', 'village', 'district', 'state', 'phone', 'updatedAt'
+        ]);
+      allow delete: if isValidId(userId) && isOwner(userId);
     }
   }
 }

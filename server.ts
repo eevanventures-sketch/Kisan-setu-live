@@ -8,12 +8,89 @@ import path from 'path';
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', 1);
+
 const PORT =
   process.env.NODE_ENV === 'production' && process.env.PORT
     ? Number(process.env.PORT)
     : 3000;
 
+// Security headers (iframe-compatible for AI Studio preview & Play Store TWA)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=(self)');
+  next();
+});
+
 app.use(express.json({ limit: '35mb' }));
+
+// Lightweight in-memory sliding-window IP rate limiter
+function createRateLimiter(maxRequests: number, windowMs: number, message: string) {
+  const hits = new Map<string, { count: number; resetAt: number }>();
+
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = String(req.ip || req.socket?.remoteAddress || 'unknown').slice(0, 64);
+    const now = Date.now();
+
+    if (hits.size > 5000) {
+      for (const [k, v] of hits.entries()) {
+        if (v.resetAt <= now) hits.delete(k);
+      }
+    }
+
+    const current = hits.get(ip);
+    if (!current || current.resetAt <= now) {
+      hits.set(ip, { count: 1, resetAt: now + windowMs });
+      return next();
+    }
+
+    if (current.count >= maxRequests) {
+      const retryAfterSec = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        error: 'RATE_LIMIT_EXCEEDED',
+        message,
+        retryAfterSeconds: retryAfterSec,
+      });
+    }
+
+    current.count += 1;
+    return next();
+  };
+}
+
+const aiRateLimiter = createRateLimiter(
+  25,
+  60 * 1000,
+  'बहुत अधिक AI अनुरोध आ रहे हैं। कृपया 1 मिनट बाद पुनः प्रयास करें।'
+);
+
+const uploadRateLimiter = createRateLimiter(
+  15,
+  5 * 60 * 1000,
+  'बहुत जल्दी-जल्दी पोस्ट अपलोड हो रही हैं। कृपया कुछ मिनट बाद पुनः प्रयास करें।'
+);
+
+// Play Store Digital Asset Links endpoint for TWA (Trusted Web Activity)
+app.get('/.well-known/assetlinks.json', (_req, res) => {
+  const packageName = (process.env.ANDROID_PACKAGE_NAME || '').trim();
+  const sha256Fingerprint = (process.env.TWA_SHA256_FINGERPRINT || '').trim();
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  if (!packageName || !sha256Fingerprint) {
+    return res.json([]);
+  }
+  return res.json([
+    {
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: packageName,
+        sha256_cert_fingerprints: [sha256Fingerprint],
+      },
+    },
+  ]);
+});
 
 // CORS headers so installed PWA / GitHub Pages builds can call live /api/* endpoints
 app.use('/api', (req, res, next) => {
@@ -321,7 +398,7 @@ app.get('/api/bazaar/listings', (_req, res) => {
   res.json({ listings: readSharedBazaarListings() });
 });
 
-app.post('/api/bazaar/media', (req, res) => {
+app.post('/api/bazaar/media', uploadRateLimiter, (req, res) => {
   try {
     const { base64, mimeType } = req.body || {};
     if (!base64 || typeof base64 !== 'string') {
@@ -342,7 +419,11 @@ app.post('/api/bazaar/media', (req, res) => {
     ensureBazaarStorage();
     const ext = getExtForMime(String(mimeType || 'video/mp4'));
     const fileName = `med_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const targetPath = path.join(SHARED_BAZAAR_MEDIA_DIR, fileName);
+    const mediaRoot = path.resolve(SHARED_BAZAAR_MEDIA_DIR);
+    const targetPath = path.resolve(mediaRoot, fileName);
+    if (!targetPath.startsWith(mediaRoot + path.sep)) {
+      return res.status(400).json({ error: 'Invalid media target' });
+    }
     fs.writeFileSync(targetPath, buffer);
 
     return res.json({
@@ -359,10 +440,14 @@ app.post('/api/bazaar/media', (req, res) => {
 
 app.get('/api/bazaar/media/:file', (req, res) => {
   const file = String(req.params.file || '');
-  if (!/^[a-zA-Z0-9_.-]+$/.test(file)) {
+  if (!/^[a-zA-Z0-9_.-]+$/.test(file) || file.includes('..')) {
     return res.status(400).json({ error: 'Invalid filename' });
   }
-  const filePath = path.join(SHARED_BAZAAR_MEDIA_DIR, file);
+  const mediaRoot = path.resolve(SHARED_BAZAAR_MEDIA_DIR);
+  const filePath = path.resolve(mediaRoot, file);
+  if (!filePath.startsWith(mediaRoot + path.sep)) {
+    return res.status(400).json({ error: 'Invalid media path' });
+  }
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Media not found' });
   }
@@ -396,16 +481,70 @@ app.get('/api/bazaar/media/:file', (req, res) => {
   }
 });
 
-app.post('/api/bazaar/listings', (req, res) => {
+const ALLOWED_BAZAAR_TYPES = new Set([
+  'sell_crop',
+  'rent_equipment',
+  'seeds_fertilizer',
+  'dairy_livestock',
+  'farm_experience',
+  'company_promo',
+]);
+
+function stripAngleBrackets(val: unknown): string {
+  return String(val ?? '').replace(/[<>]/g, '').trim();
+}
+
+function isAllowedVideoUrl(url: string): boolean {
+  return (
+    /^https?:\/\/.+/i.test(url) ||
+    /^\/api\/bazaar\/media\/[a-zA-Z0-9_.-]+$/.test(url)
+  );
+}
+
+function isAllowedImageUrl(url: string): boolean {
+  return (
+    url === '' ||
+    /^data:image\/(png|jpeg|jpg|webp|svg\+xml)[;,]/i.test(url) ||
+    /^https?:\/\/.+/i.test(url)
+  );
+}
+
+app.post('/api/bazaar/listings', uploadRateLimiter, (req, res) => {
   try {
     const body = req.body || {};
-    const titleStr = typeof body.title === 'string' ? body.title : body.title?.hi || '';
-    const sellerStr = String(body.sellerName || '').trim();
-    const phoneStr = String(body.phone || body.contactPhone || '').trim();
-    if (!titleStr.trim() || !sellerStr || !phoneStr) {
+    const titleStr = stripAngleBrackets(
+      typeof body.title === 'string' ? body.title : body.title?.hi || ''
+    );
+    const sellerStr = stripAngleBrackets(body.sellerName || '');
+    const phoneStr = stripAngleBrackets(body.phone || body.contactPhone || '');
+    if (!titleStr || !sellerStr || !phoneStr) {
       return res.status(400).json({
         error: 'MISSING_FIELDS',
         message: 'शीर्षक, नाम और मोबाइल नंबर अनिवार्य हैं।',
+      });
+    }
+
+    const rawExtUrl =
+      typeof body.externalVideoUrl === 'string' ? body.externalVideoUrl.trim() : '';
+    const rawVideoUrl = typeof body.videoUrl === 'string' ? body.videoUrl.trim() : '';
+    const rawImageUrl = typeof body.imageUrl === 'string' ? body.imageUrl.trim() : '';
+
+    if (rawExtUrl && !/^https?:\/\/.+/i.test(rawExtUrl)) {
+      return res.status(400).json({
+        error: 'INVALID_URL_SCHEME',
+        message: 'वीडियो लिंक हमेशा https:// या http:// से शुरू होना चाहिए।',
+      });
+    }
+    if (rawVideoUrl && !isAllowedVideoUrl(rawVideoUrl)) {
+      return res.status(400).json({
+        error: 'INVALID_VIDEO_URL',
+        message: 'अमान्य वीडियो URL प्रारूप।',
+      });
+    }
+    if (rawImageUrl && !isAllowedImageUrl(rawImageUrl)) {
+      return res.status(400).json({
+        error: 'INVALID_IMAGE_URL',
+        message: 'अमान्य फोटो URL प्रारूप।',
       });
     }
 
@@ -414,52 +553,79 @@ app.post('/api/bazaar/listings', (req, res) => {
         ? body.id
         : `srv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-    const locText =
+    const safeType = ALLOWED_BAZAAR_TYPES.has(String(body.type || ''))
+      ? String(body.type)
+      : 'sell_crop';
+
+    const locText = stripAngleBrackets(
       typeof body.location === 'string'
         ? body.location
-        : body.location?.hi || 'विदिशा, मध्य प्रदेश';
-    const stateText =
-      typeof body.state === 'string' ? body.state : body.state?.hi || 'मध्य प्रदेश';
-    const unitText =
-      typeof body.priceUnit === 'string' ? body.priceUnit : body.priceUnit?.hi || '₹';
-    const descText =
+        : body.location?.hi || 'विदिशा, मध्य प्रदेश'
+    );
+    const stateText = stripAngleBrackets(
+      typeof body.state === 'string' ? body.state : body.state?.hi || 'मध्य प्रदेश'
+    );
+    const unitText = stripAngleBrackets(
+      typeof body.priceUnit === 'string' ? body.priceUnit : body.priceUnit?.hi || '₹'
+    );
+    const descText = stripAngleBrackets(
       typeof body.description === 'string'
         ? body.description
-        : body.description?.hi || 'संपर्क करें।';
+        : body.description?.hi || 'संपर्क करें।'
+    );
 
     const entry = {
       id: cleanId,
-      authorUid: body.authorUid || undefined,
-      title: { hi: titleStr.trim().slice(0, 150), en: titleStr.trim().slice(0, 150) },
-      type: body.type || 'sell_crop',
-      price: Math.max(0, Number(body.price) || 0),
-      priceUnit: { hi: String(unitText).slice(0, 60), en: String(unitText).slice(0, 60) },
-      quantity: String(body.quantity || 'उपलब्ध').slice(0, 80),
-      location: { hi: String(locText).slice(0, 120), en: String(locText).slice(0, 120) },
-      state: { hi: String(stateText).slice(0, 60), en: String(stateText).slice(0, 60) },
+      authorUid:
+        typeof body.authorUid === 'string' && /^[a-zA-Z0-9_-]{5,128}$/.test(body.authorUid)
+          ? body.authorUid
+          : undefined,
+      title: { hi: titleStr.slice(0, 150), en: titleStr.slice(0, 150) },
+      type: safeType,
+      price: Math.max(0, Math.min(100000000, Number(body.price) || 0)),
+      priceUnit: { hi: unitText.slice(0, 60) || '₹', en: unitText.slice(0, 60) || '₹' },
+      quantity: stripAngleBrackets(body.quantity || 'उपलब्ध').slice(0, 80) || 'उपलब्ध',
+      location: {
+        hi: locText.slice(0, 120) || 'विदिशा, मध्य प्रदेश',
+        en: locText.slice(0, 120) || 'Vidisha, MP',
+      },
+      state: {
+        hi: stateText.slice(0, 60) || 'मध्य प्रदेश',
+        en: stateText.slice(0, 60) || 'MP',
+      },
       sellerName: sellerStr.slice(0, 100),
       phone: phoneStr.slice(0, 25),
       date:
         typeof body.date === 'string' && body.date
-          ? body.date
+          ? stripAngleBrackets(body.date).slice(0, 40)
           : new Date().toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }),
-      imageUrl: String(body.imageUrl || '').slice(0, 350000),
+      imageUrl: rawImageUrl.slice(0, 350000),
       mediaType: body.mediaType === 'video' ? 'video' : 'image',
-      videoUrl: typeof body.videoUrl === 'string' ? body.videoUrl.slice(0, 500) : undefined,
-      videoMediaId: typeof body.videoMediaId === 'string' ? body.videoMediaId : undefined,
-      videoChunkCount: Number(body.videoChunkCount) || 0,
-      videoMimeType: typeof body.videoMimeType === 'string' ? body.videoMimeType : undefined,
-      externalVideoUrl:
-        typeof body.externalVideoUrl === 'string' ? body.externalVideoUrl.slice(0, 500) : undefined,
-      description: { hi: String(descText).slice(0, 1000), en: String(descText).slice(0, 1000) },
+      videoUrl: rawVideoUrl ? rawVideoUrl.slice(0, 500) : undefined,
+      videoMediaId:
+        typeof body.videoMediaId === 'string' && /^[a-zA-Z0-9_-]{2,128}$/.test(body.videoMediaId)
+          ? body.videoMediaId
+          : undefined,
+      videoChunkCount: Math.max(0, Math.min(20, Number(body.videoChunkCount) || 0)),
+      videoMimeType:
+        typeof body.videoMimeType === 'string'
+          ? stripAngleBrackets(body.videoMimeType).slice(0, 60)
+          : undefined,
+      externalVideoUrl: rawExtUrl ? rawExtUrl.slice(0, 500) : undefined,
+      description: {
+        hi: descText.slice(0, 1000) || 'संपर्क करें।',
+        en: descText.slice(0, 1000) || 'Contact seller.',
+      },
       verified: true,
-      isCompanyPromo: body.type === 'company_promo',
-      companyName: body.companyName ? String(body.companyName).slice(0, 120) : undefined,
-      discountOffer: body.discountOffer ? String(body.discountOffer).slice(0, 120) : undefined,
-      targetPestOrCrop: body.targetPestOrCrop
-        ? String(body.targetPestOrCrop).slice(0, 150)
+      isCompanyPromo: safeType === 'company_promo',
+      companyName: body.companyName ? stripAngleBrackets(body.companyName).slice(0, 120) : undefined,
+      discountOffer: body.discountOffer
+        ? stripAngleBrackets(body.discountOffer).slice(0, 120)
         : undefined,
-      likes: Number(body.likes) || 1,
+      targetPestOrCrop: body.targetPestOrCrop
+        ? stripAngleBrackets(body.targetPestOrCrop).slice(0, 150)
+        : undefined,
+      likes: Math.max(0, Math.min(1000000, Number(body.likes) || 1)),
       isCloudPost: true,
       isDemo: false,
       createdAtMs: Number(body.createdAtMs) || Date.now(),
@@ -625,7 +791,7 @@ async function generateWithModelFallback<T>(
   throw lastErr;
 }
 
-app.post('/api/crop-doctor/chat', async (req, res) => {
+app.post('/api/crop-doctor/chat', aiRateLimiter, async (req, res) => {
   try {
     const { message, language, history } = req.body;
     if (!message || typeof message !== 'string') {
@@ -702,7 +868,7 @@ app.post('/api/crop-doctor/chat', async (req, res) => {
 });
 
 // Real Multimodal Crop Disease Diagnosis from Uploaded Leaf/Plant Photo
-app.post('/api/crop-doctor/diagnose', async (req, res) => {
+app.post('/api/crop-doctor/diagnose', aiRateLimiter, async (req, res) => {
   try {
     const { imageBase64, mimeType, language } = req.body;
     if (!imageBase64 || typeof imageBase64 !== 'string') {
@@ -827,7 +993,7 @@ app.post('/api/crop-doctor/diagnose', async (req, res) => {
 });
 
 // AI Patrak Photo Auto-Reader: extracts exact table rows from uploaded Mandi Committee photo
-app.post('/api/mandi/parse-patrak', async (req, res) => {
+app.post('/api/mandi/parse-patrak', aiRateLimiter, async (req, res) => {
   try {
     const { imageBase64, mimeType, mandiId, targetDate } = req.body;
     if (!imageBase64 || typeof imageBase64 !== 'string') {

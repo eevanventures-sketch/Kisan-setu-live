@@ -86,12 +86,12 @@ export const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, 
           <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 space-y-1.5">
             <div className="flex items-center gap-2 font-black text-emerald-950">
               <Lock className="w-4 h-4 text-emerald-700" />
-              <span>{language === 'hi' ? 'खाता एवं डेटा सुरक्षा' : 'Account & Data Security'}</span>
+              <span>{language === 'hi' ? 'खाता, डेटा सुरक्षा व डिलीट अधिकार (Play Store)' : 'Account, Data Security & Deletion Rights'}</span>
             </div>
             <p className="text-xs text-gray-600">
               {language === 'hi'
-                ? 'किसानों के लिए बिना लॉगिन के ही मंडी भाव, कैलकुलेटर व फसल डॉक्टर उपलब्ध हैं। Google Sign-In केवल मंडी एडमिन द्वारा भाव अपडेट करने या पसंदीदा मंडी क्लाउड सिंक करने के लिए वैकल्पिक है।'
-                : 'Farmers can use Mandi prices, calculators, and Crop Doctor without logging in. Google Sign-In is optional for preference sync and verified admin price publishing.'}
+                ? 'किसानों के लिए बिना लॉगिन के भी मंडी भाव, कैलकुलेटर व फसल डॉक्टर उपलब्ध हैं। Google Sign-In करने पर आपका नाम, ईमेल व किसान प्रोफाइल केवल आपके निजी Firebase खाते में सुरक्षित रहती है — किसी विज्ञापन कंपनी को कभी नहीं दी जाती। आप ऐप के ऊपर "प्रोफाइल / खाता" बटन से कभी भी 1-क्लिक में अपना सारा क्लाउड डेटा स्थायी रूप से डिलीट कर सकते हैं।'
+                : 'Farmers can use Mandi prices, calculators, and Crop Doctor without logging in. When you sign in with Google, your name, email, and farmer profile are isolated strictly to your own encrypted Firebase account and never shared with advertisers. You can permanently delete your cloud profile and preferences anytime directly from the in-app Account/Profile dialog.'}
             </p>
           </div>
 

@@ -5,6 +5,7 @@ import { mockMarketListings } from '../data/mockData';
 import { MarketListing } from '../types';
 import { fetchApi } from '../utils/apiBase';
 import {
+  UserProfileData,
   subscribeToAuth,
   signInWithGooglePopup,
   subscribeToBazaarListings,
@@ -138,7 +139,11 @@ function extractVideoThumbnailDataUrl(file: File): Promise<string> {
   });
 }
 
-export const KisanBazaar: React.FC = () => {
+interface KisanBazaarProps {
+  userProfile?: UserProfileData | null;
+}
+
+export const KisanBazaar: React.FC<KisanBazaarProps> = ({ userProfile }) => {
   const { language } = useLanguage();
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -345,6 +350,14 @@ export const KisanBazaar: React.FC = () => {
   const openPostModal = (preset: 'general' | 'reel' | 'company_promo' = 'general') => {
     setFormError(null);
     setUploadProgress(0);
+    if (userProfile) {
+      if (!newSeller.trim() && userProfile.displayName) setNewSeller(userProfile.displayName);
+      if (!newPhone.trim() && userProfile.phone) setNewPhone(userProfile.phone);
+      if (!newLocation.trim() && (userProfile.village || userProfile.district)) {
+        setNewLocation([userProfile.village, userProfile.district].filter(Boolean).join(', '));
+      }
+      if (userProfile.state) setNewState(userProfile.state);
+    }
     if (preset === 'reel') {
       setNewType('farm_experience');
       setMediaType('video');
@@ -480,10 +493,16 @@ export const KisanBazaar: React.FC = () => {
       setFormError('कृपया सही 10 अंकों का मोबाइल / WhatsApp नंबर दर्ज करें ताकि खरीदार कॉल कर सकें।');
       return;
     }
+    const cleanExtUrl = externalVideoUrl.trim();
+    if (cleanExtUrl && !/^https?:\/\/.+/i.test(cleanExtUrl)) {
+      setFormError('वीडियो लिंक हमेशा https:// या http:// से शुरू होना चाहिए।');
+      return;
+    }
+
     if (
       mediaType === 'video' &&
       !selectedVideoFile &&
-      !externalVideoUrl.trim() &&
+      !cleanExtUrl &&
       !mediaUrl
     ) {
       setFormError(

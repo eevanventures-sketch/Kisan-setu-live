@@ -10,6 +10,7 @@ import {
 import {
   getFirestore,
   doc,
+  getDoc,
   getDocFromServer,
   collection,
   onSnapshot,
@@ -298,6 +299,165 @@ export async function saveUserPreferenceToCloud(pref: {
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
+}
+
+// =========================================================================
+// FARMER ACCOUNT & PRIVATE PROFILE (/users/{uid})
+// =========================================================================
+
+export interface UserProfileData {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoUrl: string;
+  village: string;
+  district: string;
+  state: string;
+  phone: string;
+  role: 'farmer' | 'admin';
+}
+
+export async function syncUserProfileOnLogin(user: User): Promise<UserProfileData | null> {
+  if (!user || !user.emailVerified || !user.email) return null;
+  const path = `users/${user.uid}`;
+  const ref = doc(db, 'users', user.uid);
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) {
+      const d = snap.data();
+      return {
+        uid: user.uid,
+        displayName: String(d.displayName || user.displayName || 'किसान भाई'),
+        email: String(d.email || user.email),
+        photoUrl: String(d.photoUrl || user.photoURL || ''),
+        village: String(d.village || ''),
+        district: String(d.district || ''),
+        state: String(d.state || 'मध्य प्रदेश'),
+        phone: String(d.phone || ''),
+        role: d.role === 'admin' ? 'admin' : 'farmer',
+      };
+    }
+
+    const displayName = clampString(
+      user.displayName || user.email.split('@')[0] || 'किसान भाई',
+      2,
+      100,
+      'किसान भाई'
+    );
+    const email = clampString(user.email, 3, 150, 'farmer@kisansetu.in');
+    const photoUrl = clampString(user.photoURL || '', 0, 500, '');
+
+    await setDoc(ref, {
+      uid: user.uid,
+      displayName,
+      email,
+      photoUrl,
+      village: '',
+      district: '',
+      state: 'मध्य प्रदेश',
+      phone: '',
+      role: 'farmer',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    return {
+      uid: user.uid,
+      displayName,
+      email,
+      photoUrl,
+      village: '',
+      district: '',
+      state: 'मध्य प्रदेश',
+      phone: '',
+      role: 'farmer',
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export function subscribeToUserProfile(
+  user: User,
+  onData: (profile: UserProfileData | null) => void,
+  onError?: (err: unknown) => void
+): Unsubscribe {
+  const path = `users/${user.uid}`;
+  return onSnapshot(
+    doc(db, 'users', user.uid),
+    (snap) => {
+      if (!snap.exists()) {
+        onData(null);
+        return;
+      }
+      const d = snap.data();
+      onData({
+        uid: user.uid,
+        displayName: String(d.displayName || user.displayName || 'किसान भाई'),
+        email: String(d.email || user.email || ''),
+        photoUrl: String(d.photoUrl || user.photoURL || ''),
+        village: String(d.village || ''),
+        district: String(d.district || ''),
+        state: String(d.state || 'मध्य प्रदेश'),
+        phone: String(d.phone || ''),
+        role: d.role === 'admin' ? 'admin' : 'farmer',
+      });
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (wrapped) {
+        if (onError) onError(wrapped);
+      }
+    }
+  );
+}
+
+export async function updateUserProfileInCloud(input: {
+  displayName: string;
+  village: string;
+  district: string;
+  state: string;
+  phone: string;
+}): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    throw new Error('AUTH_REQUIRED');
+  }
+  const path = `users/${user.uid}`;
+  try {
+    await updateDoc(doc(db, 'users', user.uid), {
+      displayName: clampString(input.displayName, 2, 100, 'किसान भाई'),
+      photoUrl: clampString(user.photoURL || '', 0, 500, ''),
+      village: clampString(input.village, 0, 100, ''),
+      district: clampString(input.district, 0, 100, ''),
+      state: clampString(input.state, 0, 100, ''),
+      phone: clampString(input.phone, 0, 25, ''),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteMyAccountDataInCloud(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    throw new Error('AUTH_REQUIRED');
+  }
+  const profilePath = `users/${user.uid}`;
+  const prefPath = `userPreferences/${user.uid}`;
+  try {
+    await deleteDoc(doc(db, 'users', user.uid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, profilePath);
+  }
+  try {
+    await deleteDoc(doc(db, 'userPreferences', user.uid));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, prefPath);
+  }
+  await signOutFirebase();
 }
 
 // =========================================================================

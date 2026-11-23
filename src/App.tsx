@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { User } from 'firebase/auth';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Header } from './components/Header';
 import { Navigation, TabKey } from './components/Navigation';
@@ -13,19 +14,29 @@ import { KisanLedger } from './components/KisanLedger';
 import { KisanChopal } from './components/KisanChopal';
 import { MobileDownloadModal } from './components/MobileDownloadModal';
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal';
+import { AuthModal } from './components/AuthModal';
+import {
+  UserProfileData,
+  subscribeToAuth,
+  syncUserProfileOnLogin,
+  subscribeToUserProfile,
+} from './firebase';
 import { usePWAInstall } from './hooks/usePWAInstall';
-import { PhoneCall, Heart, ShieldCheck, Sprout, Download, X } from 'lucide-react';
+import { Heart, ShieldCheck, Sprout, Download, X } from 'lucide-react';
 
 const MainContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('dashboard');
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
   const [dismissedInstallBar, setDismissedInstallBar] = useState(false);
   const { language } = useLanguage();
   const { isInstallable, isInstalled, install } = usePWAInstall();
   const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' ? !navigator.onLine : false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
@@ -36,9 +47,33 @@ const MainContent: React.FC = () => {
     };
   }, []);
 
-  const isStandalone =
-    typeof window !== 'undefined' &&
-    (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
+  useEffect(() => {
+    let unsubProfile: (() => void) | null = null;
+
+    const unsubAuth = subscribeToAuth((nextUser) => {
+      setUser(nextUser);
+      if (unsubProfile) {
+        unsubProfile();
+        unsubProfile = null;
+      }
+
+      if (nextUser && nextUser.emailVerified) {
+        void syncUserProfileOnLogin(nextUser).catch(() => null);
+        unsubProfile = subscribeToUserProfile(
+          nextUser,
+          (profile) => setUserProfile(profile),
+          () => {}
+        );
+      } else {
+        setUserProfile(null);
+      }
+    });
+
+    return () => {
+      unsubAuth();
+      if (unsubProfile) unsubProfile();
+    };
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f7f9f6] text-[#1a2e1c]">
@@ -53,6 +88,9 @@ const MainContent: React.FC = () => {
       <Header
         activeTab={activeTab}
         onOpenDownload={() => setIsDownloadModalOpen(true)}
+        user={user}
+        userProfile={userProfile}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
       />
 
       {/* Primary Navigation Tabs */}
@@ -70,7 +108,7 @@ const MainContent: React.FC = () => {
         {activeTab === 'cropDoctor' && <CropDoctor />}
         {activeTab === 'weather' && <WeatherAdvisory />}
         {activeTab === 'schemes' && <GovernmentSchemes />}
-        {activeTab === 'bazaar' && <KisanBazaar />}
+        {activeTab === 'bazaar' && <KisanBazaar userProfile={userProfile} />}
         {activeTab === 'calculator' && <FertilizerCalculator />}
         {activeTab === 'ledger' && <KisanLedger />}
         {activeTab === 'chopal' && <KisanChopal />}
@@ -80,6 +118,15 @@ const MainContent: React.FC = () => {
       <MobileDownloadModal
         isOpen={isDownloadModalOpen}
         onClose={() => setIsDownloadModalOpen(false)}
+        onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
+      />
+
+      {/* Account & Farmer Profile Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        user={user}
+        userProfile={userProfile}
         onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
       />
 
