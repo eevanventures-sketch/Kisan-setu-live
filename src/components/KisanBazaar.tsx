@@ -3,7 +3,7 @@ import { User } from 'firebase/auth';
 import { useLanguage } from '../context/LanguageContext';
 import { mockMarketListings } from '../data/mockData';
 import { MarketListing } from '../types';
-import { fetchApi } from '../utils/apiBase';
+import { fetchApi, getApiUrl } from '../utils/apiBase';
 import {
   UserProfileData,
   subscribeToAuth,
@@ -66,6 +66,97 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result || ''));
     reader.onerror = () => reject(new Error('फ़ाइल पढ़ने में त्रुटि'));
     reader.readAsDataURL(file);
+  });
+}
+
+function uploadVideoFileWithProgress(
+  file: File,
+  onProgress: (pct: number) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const mime = file.type && file.type.startsWith('video/') ? file.type : 'video/mp4';
+    const rawUrl = getApiUrl(`/api/bazaar/media-raw?mimeType=${encodeURIComponent(mime)}`);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', rawUrl, true);
+    xhr.timeout = 180000; // 3 minutes for rural 4G/5G uploads
+    xhr.setRequestHeader('Content-Type', mime);
+
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable && evt.total > 0) {
+        const pct = Math.round(30 + (evt.loaded / evt.total) * 58);
+        onProgress(Math.min(88, Math.max(30, pct)));
+      }
+    };
+
+    xhr.onload = async () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText || '{}');
+          if (data?.url) {
+            resolve(String(data.url));
+            return;
+          }
+        } catch {
+          // fall through
+        }
+        reject(new Error('वीडियो सर्वर से सही जवाब नहीं मिला।'));
+        return;
+      }
+
+      // Graceful fallback if connecting to an older backend without /api/bazaar/media-raw
+      if (xhr.status === 404 || xhr.status === 405) {
+        try {
+          onProgress(45);
+          const dataUrl = await fileToDataUrl(file);
+          onProgress(65);
+          const res = await fetchApi(
+            '/api/bazaar/media',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                base64: dataUrl,
+                mimeType: mime,
+                fileName: file.name,
+              }),
+            },
+            180000
+          );
+          if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson?.message || errJson?.error || 'वीडियो सर्वर पर अपलोड नहीं हो सका।');
+          }
+          const json = await res.json();
+          resolve(String(json.url));
+        } catch (fallbackErr) {
+          reject(fallbackErr);
+        }
+        return;
+      }
+
+      try {
+        const errJson = JSON.parse(xhr.responseText || '{}');
+        reject(new Error(errJson?.message || errJson?.error || `वीडियो अपलोड विफल (कोड ${xhr.status})।`));
+      } catch {
+        reject(new Error(`वीडियो अपलोड विफल (कोड ${xhr.status})। कृपया छोटा वीडियो चुनें।`));
+      }
+    };
+
+    xhr.ontimeout = () => {
+      reject(
+        new Error(
+          'नेटवर्क धीमा होने से वीडियो अपलोड में अधिक समय लग गया। कृपया 10-20 सेकंड का छोटा वीडियो चुनें या बेहतर नेटवर्क में पुनः प्रयास करें।'
+        )
+      );
+    };
+    xhr.onabort = () => {
+      reject(new Error('वीडियो अपलोड बीच में रुक गया। कृपया पुनः प्रयास करें।'));
+    };
+    xhr.onerror = () => {
+      reject(new Error('सर्वर से संपर्क नहीं हो सका — कृपया इंटरनेट कनेक्शन जाँचें।'));
+    };
+
+    xhr.send(file);
   });
 }
 
@@ -566,33 +657,17 @@ export const KisanBazaar: React.FC<KisanBazaarProps> = ({ userProfile }) => {
         }
       }
 
-      // 2. Also upload / publish to Shared Express Server (/api/bazaar/media & /api/bazaar/listings)
-      // Works for ALL users even without Google sign-in and supports videos up to 22 MB!
+      // 2. Also upload / publish to Shared Express Server (/api/bazaar/media-raw & /api/bazaar/listings)
+      // Works for ALL users even without Google sign-in and supports raw binary videos up to 22 MB!
       let serverVideoUrl: string | undefined = externalVideoUrl.trim() || undefined;
       if (!savedEntry && mediaType === 'video' && selectedVideoFile) {
-        setUploadProgress(40);
-        const dataUrl = await fileToDataUrl(selectedVideoFile);
-        setUploadProgress(65);
-        const mediaRes = await fetchApi(
-          '/api/bazaar/media',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              base64: dataUrl,
-              mimeType: selectedVideoFile.type || 'video/mp4',
-              fileName: selectedVideoFile.name,
-            }),
-          },
-          60000
-        );
-        if (!mediaRes.ok) {
-          const errJson = await mediaRes.json().catch(() => ({}));
-          throw new Error(errJson?.message || errJson?.error || 'वीडियो सर्वर पर अपलोड नहीं हो सका।');
-        }
-        const mediaData = await mediaRes.json();
-        serverVideoUrl = mediaData.url;
-        setUploadProgress(85);
+        setUploadProgress(28);
+        // Pre-warm backend quickly (helps wake sleeping Render server before binary upload)
+        await fetchApi('/api/health', undefined, 25000).catch(() => {});
+        serverVideoUrl = await uploadVideoFileWithProgress(selectedVideoFile, (pct) => {
+          setUploadProgress(pct);
+        });
+        setUploadProgress(90);
       }
 
       if (!savedEntry) {
@@ -684,7 +759,14 @@ export const KisanBazaar: React.FC<KisanBazaarProps> = ({ userProfile }) => {
         feedTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 150);
     } catch (err: any) {
-      setFormError(err?.message || 'प्रकाशित करने में समस्या आई। कृपया पुनः प्रयास करें।');
+      const rawMsg = String(err?.message || '');
+      if (/signal is aborted|abort|timeout/i.test(rawMsg)) {
+        setFormError(
+          'नेटवर्क धीमा होने से वीडियो अपलोड पूरा नहीं हो सका। कृपया थोड़ा छोटा वीडियो (लगभग 10-20 सेकंड / 10 MB से कम) चुनें या बेहतर इंटरनेट में दोबारा प्रयास करें।'
+        );
+      } else {
+        setFormError(rawMsg || 'प्रकाशित करने में समस्या आई। कृपया पुनः प्रयास करें।');
+      }
     } finally {
       setIsSubmitting(false);
     }

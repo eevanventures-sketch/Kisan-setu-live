@@ -444,6 +444,24 @@ app.get('/api/bazaar/listings', (_req, res) => {
   res.json({ listings: readSharedBazaarListings() });
 });
 
+function saveBazaarMediaBuffer(buffer: Buffer, mimeType: string) {
+  ensureBazaarStorage();
+  const ext = getExtForMime(String(mimeType || 'video/mp4'));
+  const fileName = `med_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const mediaRoot = path.resolve(SHARED_BAZAAR_MEDIA_DIR);
+  const targetPath = path.resolve(mediaRoot, fileName);
+  if (!targetPath.startsWith(mediaRoot + path.sep)) {
+    throw new Error('INVALID_MEDIA_TARGET');
+  }
+  fs.writeFileSync(targetPath, buffer);
+  return {
+    mediaId: fileName,
+    url: `/api/bazaar/media/${fileName}`,
+    mimeType: getMimeForExt(fileName),
+    size: buffer.length,
+  };
+}
+
 app.post('/api/bazaar/media', uploadRateLimiter, (req, res) => {
   try {
     const { base64, mimeType } = req.body || {};
@@ -462,27 +480,43 @@ app.post('/api/bazaar/media', uploadRateLimiter, (req, res) => {
       });
     }
 
-    ensureBazaarStorage();
-    const ext = getExtForMime(String(mimeType || 'video/mp4'));
-    const fileName = `med_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const mediaRoot = path.resolve(SHARED_BAZAAR_MEDIA_DIR);
-    const targetPath = path.resolve(mediaRoot, fileName);
-    if (!targetPath.startsWith(mediaRoot + path.sep)) {
-      return res.status(400).json({ error: 'Invalid media target' });
-    }
-    fs.writeFileSync(targetPath, buffer);
-
-    return res.json({
-      mediaId: fileName,
-      url: `/api/bazaar/media/${fileName}`,
-      mimeType: getMimeForExt(fileName),
-      size: buffer.length,
-    });
+    return res.json(saveBazaarMediaBuffer(buffer, String(mimeType || 'video/mp4')));
   } catch (err: any) {
     console.error('Bazaar media upload error:', err?.message || err);
     return res.status(500).json({ error: 'वीडियो सेव करने में त्रुटि आई।' });
   }
 });
+
+app.post(
+  '/api/bazaar/media-raw',
+  uploadRateLimiter,
+  express.raw({ type: ['video/*', 'image/*', 'application/octet-stream'], limit: '24mb' }),
+  (req, res) => {
+    try {
+      const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      if (buffer.length === 0) {
+        return res.status(400).json({
+          error: 'EMPTY_MEDIA',
+          message: 'वीडियो फ़ाइल खाली प्राप्त हुई। कृपया पुनः प्रयास करें।',
+        });
+      }
+      if (buffer.length > 22 * 1024 * 1024) {
+        return res.status(413).json({
+          error: 'MEDIA_TOO_LARGE',
+          message: 'वीडियो साइज 22 MB से कम रखें (लगभग 30-45 सेकंड की रील)।',
+        });
+      }
+      const mimeType = String(req.query.mimeType || req.headers['content-type'] || 'video/mp4');
+      return res.json(saveBazaarMediaBuffer(buffer, mimeType));
+    } catch (err: any) {
+      console.error('Bazaar raw media upload error:', err?.message || err);
+      return res.status(500).json({
+        error: 'UPLOAD_FAILED',
+        message: 'वीडियो सर्वर पर सेव करने में त्रुटि आई।',
+      });
+    }
+  }
+);
 
 app.get('/api/bazaar/media/:file', (req, res) => {
   const file = String(req.params.file || '');

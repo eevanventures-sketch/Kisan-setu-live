@@ -57,13 +57,26 @@ export function getApiUrl(path: string): string {
 export async function fetchApi(path: string, init?: RequestInit, timeoutMs = 20000): Promise<Response> {
   const url = getApiUrl(path);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let didTimeout = false;
+
+  const abortWithReason = (reason: string) => {
+    try {
+      controller.abort(new Error(reason));
+    } catch {
+      controller.abort();
+    }
+  };
+
+  const timer = setTimeout(() => {
+    didTimeout = true;
+    abortWithReason('REQUEST_TIMEOUT');
+  }, timeoutMs);
 
   const externalSignal = init?.signal;
-  const onExternalAbort = () => controller.abort();
+  const onExternalAbort = () => abortWithReason('REQUEST_CANCELLED');
   if (externalSignal) {
     if (externalSignal.aborted) {
-      controller.abort();
+      abortWithReason('REQUEST_CANCELLED');
     } else {
       externalSignal.addEventListener('abort', onExternalAbort, { once: true });
     }
@@ -75,6 +88,15 @@ export async function fetchApi(path: string, init?: RequestInit, timeoutMs = 200
       signal: controller.signal,
     });
     return response;
+  } catch (err: any) {
+    if (didTimeout) {
+      throw new Error('नेटवर्क धीमा होने के कारण सर्वर से समय पर जवाब नहीं मिला। कृपया पुनः प्रयास करें।');
+    }
+    const msg = String(err?.message || err || '');
+    if (err?.name === 'AbortError' || /signal is aborted|aborted/i.test(msg)) {
+      throw new Error('अनुरोध बीच में रुक गया। कृपया अपना इंटरनेट जाँचकर दोबारा प्रयास करें।');
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
     if (externalSignal) {
