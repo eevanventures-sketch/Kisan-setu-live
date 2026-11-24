@@ -465,8 +465,8 @@ export async function deleteMyAccountDataInCloud(): Promise<void> {
 // =========================================================================
 
 const cloudVideoBlobCache = new Map<string, string>();
-const CHUNK_BASE64_SIZE = 560000; // < 750KB rule limit & safely < 1MB Firestore doc limit
-const MAX_CLOUD_VIDEO_CHUNKS = 14; // ~5.8 MB raw binary video in permanent Firestore chunks
+const CHUNK_BASE64_SIZE = 700000; // < 750KB rule limit & safely < 1MB Firestore doc limit
+const MAX_CLOUD_VIDEO_CHUNKS = 20; // Matches firestore.rules (totalChunks <= 20 => ~10.5 MB raw video)
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -479,14 +479,23 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function normalizePlayableVideoMime(rawMime?: string): string {
+  const m = String(rawMime || '').trim().toLowerCase();
+  if (!m || m === 'application/octet-stream' || m === 'video/quicktime') {
+    return 'video/mp4';
+  }
+  return m;
+}
+
 function base64ToBlob(base64: string, mimeType: string): Blob {
-  const binary = atob(base64);
+  const cleanB64 = base64.replace(/\s+/g, '');
+  const binary = atob(cleanB64);
   const len = binary.length;
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i++) {
     bytes[i] = binary.charCodeAt(i);
   }
-  return new Blob([bytes], { type: mimeType || 'video/mp4' });
+  return new Blob([bytes], { type: normalizePlayableVideoMime(mimeType) });
 }
 
 export interface PublishBazaarListingInput {
@@ -534,7 +543,7 @@ export async function publishBazaarListingToCloud(
     }
 
     videoMediaId = sanitizeId(`vid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`);
-    videoMimeType = clampString(input.videoFile.type || 'video/mp4', 3, 60, 'video/mp4');
+    videoMimeType = clampString(normalizePlayableVideoMime(input.videoFile.type), 3, 60, 'video/mp4');
     videoChunkCount = totalChunks;
 
     for (let i = 0; i < totalChunks; i++) {
@@ -651,18 +660,26 @@ export async function loadCloudBazaarVideoUrl(
     if (snap.empty) {
       throw new Error('VIDEO_NOT_FOUND');
     }
-    const chunks: { chunkIndex: number; data: string; mimeType?: string }[] = [];
+    const chunks: { chunkIndex: number; totalChunks: number; data: string; mimeType?: string }[] = [];
     snap.forEach((docSnap) => {
       const d = docSnap.data();
       if (typeof d.chunkIndex === 'number' && typeof d.data === 'string') {
         chunks.push({
           chunkIndex: d.chunkIndex,
+          totalChunks: typeof d.totalChunks === 'number' ? d.totalChunks : 0,
           data: d.data,
           mimeType: typeof d.mimeType === 'string' ? d.mimeType : mimeType,
         });
       }
     });
+    if (chunks.length === 0) {
+      throw new Error('VIDEO_NOT_FOUND');
+    }
     chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+    const expectedTotal = chunks[0]?.totalChunks || 0;
+    if (expectedTotal > 0 && chunks.length < expectedTotal) {
+      throw new Error('VIDEO_CHUNKS_INCOMPLETE');
+    }
     const fullBase64 = chunks.map((c) => c.data).join('');
     const finalMime = chunks[0]?.mimeType || mimeType;
     const blob = base64ToBlob(fullBase64, finalMime);

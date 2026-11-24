@@ -1064,6 +1064,29 @@ export const GANJBASODA_16_NOV_ROWS: MandiPatrakRow[] = [
   { sNo: 16, cropName: 'मटर', contracts: 2, arrival: 50, arrivalUnit: 'बोरी', minPrice: 2150, maxPrice: 2550, modalPrice: 2150, yesterdayPrice: 0, priceChange: 0, msp: '-' },
 ];
 
+// Exact 23/11/2026 Ganjbasoda certified 18-crop sheet (IMG-20261123-WA0006_24e4c97e.jpg)
+// Total Contracts: 1603 | Total Arrival: 32,859 बोरी
+export const GANJBASODA_23_NOV_ROWS: MandiPatrakRow[] = [
+  { sNo: 1, cropName: 'सोयाबीन', contracts: 308, arrival: 3983, arrivalUnit: 'बोरी', minPrice: 2400, maxPrice: 8000, modalPrice: 7700, yesterdayPrice: 7000, priceChange: 700, msp: 5708 },
+  { sNo: 2, cropName: 'सरसों', contracts: 20, arrival: 265, arrivalUnit: 'बोरी', minPrice: 7000, maxPrice: 10131, modalPrice: 8600, yesterdayPrice: 8400, priceChange: 200, msp: 6200 },
+  { sNo: 3, cropName: 'चना', contracts: 106, arrival: 766, arrivalUnit: 'बोरी', minPrice: 5700, maxPrice: 7626, modalPrice: 7000, yesterdayPrice: 7000, priceChange: 0, msp: 5958 },
+  { sNo: 4, cropName: 'मसूर', contracts: 55, arrival: 293, arrivalUnit: 'बोरी', minPrice: 4200, maxPrice: 7818, modalPrice: 5400, yesterdayPrice: 5400, priceChange: 0, msp: 7000 },
+  { sNo: 5, cropName: 'शरवती', contracts: 9, arrival: 67, arrivalUnit: 'बोरी', minPrice: 3100, maxPrice: 4700, modalPrice: 3800, yesterdayPrice: 4870, priceChange: -1070, msp: 2625 },
+  { sNo: 6, cropName: 'गेहूं (1544)', contracts: 190, arrival: 2774, arrivalUnit: 'बोरी', minPrice: 2440, maxPrice: 3390, modalPrice: 2780, yesterdayPrice: 2780, priceChange: 0, msp: 2625 },
+  { sNo: 7, cropName: 'मालवा शक्ति', contracts: 4, arrival: 93, arrivalUnit: 'बोरी', minPrice: 2552, maxPrice: 2626, modalPrice: 2581, yesterdayPrice: 2584, priceChange: -3, msp: 2625 },
+  { sNo: 8, cropName: 'मक्का', contracts: 224, arrival: 8382, arrivalUnit: 'बोरी', minPrice: 2200, maxPrice: 2750, modalPrice: 2650, yesterdayPrice: 2600, priceChange: 50, msp: 2410 },
+  { sNo: 9, cropName: 'मुंग', contracts: 4, arrival: 14, arrivalUnit: 'बोरी', minPrice: 2600, maxPrice: 3800, modalPrice: 3800, yesterdayPrice: 5400, priceChange: -1600, msp: 8780 },
+  { sNo: 10, cropName: 'उड़द', contracts: 45, arrival: 396, arrivalUnit: 'बोरी', minPrice: 4000, maxPrice: 8450, modalPrice: 5200, yesterdayPrice: 4600, priceChange: 600, msp: 8200 },
+  { sNo: 11, cropName: 'ज्वार', contracts: 140, arrival: 2044, arrivalUnit: 'बोरी', minPrice: 2000, maxPrice: 6380, modalPrice: 5950, yesterdayPrice: 5800, priceChange: 150, msp: '-' },
+  { sNo: 12, cropName: 'तिवड़ा', contracts: 15, arrival: 44, arrivalUnit: 'बोरी', minPrice: 2700, maxPrice: 3551, modalPrice: 3150, yesterdayPrice: 3000, priceChange: 150, msp: '-' },
+  { sNo: 13, cropName: 'धान', contracts: 464, arrival: 13640, arrivalUnit: 'बोरी', minPrice: 1300, maxPrice: 5070, modalPrice: 4800, yesterdayPrice: 4500, priceChange: 300, msp: 2441 },
+  { sNo: 14, cropName: 'धनिया', contracts: 2, arrival: 3, arrivalUnit: 'बोरी', minPrice: 12500, maxPrice: 14500, modalPrice: 12500, yesterdayPrice: 13700, priceChange: -1200, msp: '-' },
+  { sNo: 15, cropName: 'अलसी', contracts: 1, arrival: 1, arrivalUnit: 'बोरी', minPrice: 9700, maxPrice: 9700, modalPrice: 9700, yesterdayPrice: 0, priceChange: 0, msp: '-' },
+  { sNo: 16, cropName: 'मटर', contracts: 2, arrival: 34, arrivalUnit: 'बोरी', minPrice: 2000, maxPrice: 2300, modalPrice: 2300, yesterdayPrice: 2150, priceChange: 150, msp: '-' },
+  { sNo: 17, cropName: 'बटरी', contracts: 13, arrival: 58, arrivalUnit: 'बोरी', minPrice: 1900, maxPrice: 4010, modalPrice: 2090, yesterdayPrice: 1900, priceChange: 190, msp: '-' },
+  { sNo: 18, cropName: 'समाँ', contracts: 1, arrival: 2, arrivalUnit: 'बोरी', minPrice: 1300, maxPrice: 1300, modalPrice: 1300, yesterdayPrice: 0, priceChange: 0, msp: '-' },
+];
+
 const CUSTOM_PATRAK_STORAGE_KEY = 'kisan_setu_custom_patraks_v1';
 
 export interface SavedCustomPatrak {
@@ -1077,6 +1100,21 @@ export interface SavedCustomPatrak {
   updatedAt: string;
   sourceLabel?: string;
   sourceUrls?: Array<{ title: string; uri: string }>;
+}
+
+export function isRichOfficialPatrak(entry: SavedCustomPatrak | null | undefined): boolean {
+  if (!entry || !Array.isArray(entry.rows) || entry.rows.length === 0) return false;
+  const contractsStr = String(entry.totalContracts ?? '').trim();
+  const hasNumericContracts = Boolean(contractsStr && contractsStr !== '-' && contractsStr !== '0');
+  const release = String(entry.releaseTime || '');
+  const src = String(entry.sourceLabel || '');
+  return (
+    hasNumericContracts ||
+    release.includes('फोटो स्कैन') ||
+    release.includes('एडमिन') ||
+    release.includes('कार्यालय') ||
+    src.includes('स्कैन')
+  );
 }
 
 export function getCustomPatrakMap(): Record<string, SavedCustomPatrak> {
@@ -1148,7 +1186,24 @@ export function mergeSharedPatraks(serverPatraks: Record<string, SavedCustomPatr
     let updatedCount = 0;
     for (const [key, entry] of Object.entries(serverPatraks)) {
       if (!entry || !Array.isArray(entry.rows) || entry.rows.length === 0) continue;
+      // Never allow a sparse Agmarknet web scrape to downgrade our embedded 18-crop 23-11-2026 Ganjbasoda official sheet
+      if (
+        entry.mandiId === 'mp-vidisha-ganjbasoda' &&
+        (entry.date === '23-11-2026' || entry.date === '16-11-2026') &&
+        !isRichOfficialPatrak(entry)
+      ) {
+        continue;
+      }
       const existing = local[key];
+      // Protect an existing complete/photo-scanned sheet from being overwritten by a sparser web scrape
+      if (
+        existing &&
+        isRichOfficialPatrak(existing) &&
+        !isRichOfficialPatrak(entry) &&
+        existing.rows.length >= entry.rows.length
+      ) {
+        continue;
+      }
       if (!existing || (entry.updatedAt && (!existing.updatedAt || entry.updatedAt > existing.updatedAt))) {
         local[key] = {
           ...entry,
@@ -1195,8 +1250,49 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
   const isGanjbasoda = mandiId === 'mp-vidisha-ganjbasoda';
   const isVidisha = mandiId === 'mp-vidisha-vidisha';
 
-  // Check if user scanned/saved or server auto-synced an official daily patrak for this exact mandi & date
+  // Exact verified 18-crop 23-11-2026 Ganjbasoda official sheet (preserved unless replaced by another rich official scan)
   const customSaved = getCustomPatrak(mandiId, dateMeta.dateStr);
+  if (
+    isGanjbasoda &&
+    dateMeta.dateStr === '23-11-2026' &&
+    (!customSaved || (!isRichOfficialPatrak(customSaved) && customSaved.rows.length < GANJBASODA_23_NOV_ROWS.length))
+  ) {
+    return {
+      ...base,
+      date: '23-11-2026',
+      releaseTime: 'सायं 5:30 बजे (कार्यालय दैनिक पत्रक • सत्यापित 23/11/2026)',
+      status: 'open',
+      sessionStatus: dateOption === 'today' ? dateMeta.sessionStatus : 'after_530',
+      isVerifiedForDate: true,
+      totalContracts: 1603,
+      totalArrival: '32,859',
+      arrivalUnit: 'बोरी',
+      rows: GANJBASODA_23_NOV_ROWS,
+      sourceLabel: 'कार्यालय कृषि उपज मंडी समिति गंजबासौदा (सत्यापित 18 जिंस पत्रक)',
+    };
+  }
+
+  // Exact match for 16-11-2026 Ganjbasoda official uploaded patrak
+  if (
+    isGanjbasoda &&
+    dateMeta.dateStr === '16-11-2026' &&
+    (!customSaved || (!isRichOfficialPatrak(customSaved) && customSaved.rows.length < GANJBASODA_16_NOV_ROWS.length))
+  ) {
+    return {
+      ...base,
+      date: '16-11-2026',
+      releaseTime: 'सायं 5:30 बजे (कार्यालय दैनिक पत्रक • सत्यापित 16/11/2026)',
+      status: 'open',
+      sessionStatus: dateOption === 'today' ? dateMeta.sessionStatus : 'after_530',
+      isVerifiedForDate: true,
+      totalContracts: 1898,
+      totalArrival: '38,416',
+      arrivalUnit: 'बोरी',
+      rows: GANJBASODA_16_NOV_ROWS,
+    };
+  }
+
+  // Check if user scanned/saved or server auto-synced an official daily patrak for this exact mandi & date
   if (customSaved) {
     return {
       ...base,
@@ -1214,28 +1310,23 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
     };
   }
 
-  // Exact match for 16-11-2026 Ganjbasoda official uploaded patrak
-  if (isGanjbasoda && dateMeta.dateStr === '16-11-2026') {
-    return {
-      ...base,
-      date: '16-11-2026',
-      releaseTime: 'सायं 5:30 बजे (कार्यालय दैनिक पत्रक • सत्यापित 16/11/2026)',
-      status: 'open',
-      sessionStatus: dateOption === 'today' ? dateMeta.sessionStatus : 'after_530',
-      isVerifiedForDate: true,
-      totalContracts: 1898,
-      totalArrival: '38,416',
-      arrivalUnit: 'बोरी',
-      rows: GANJBASODA_16_NOV_ROWS,
-    };
-  }
+  const latestCustomRaw = getLatestCustomPatrak(mandiId);
+  // If embedded Ganjbasoda 23-11-2026 (18 crops) is newer or richer than a sparse older/same-day scrape, prefer it as fallback reference
+  const latestCustom =
+    latestCustomRaw &&
+    !(
+      isGanjbasoda &&
+      ddmmyyyySortable(latestCustomRaw.date) <= '2026-11-23' &&
+      !isRichOfficialPatrak(latestCustomRaw)
+    )
+      ? latestCustomRaw
+      : null;
 
-  const latestCustom = getLatestCustomPatrak(mandiId);
   const getReferenceRows = () =>
     latestCustom
       ? latestCustom.rows
       : isGanjbasoda
-      ? GANJBASODA_16_NOV_ROWS
+      ? GANJBASODA_23_NOV_ROWS
       : isVidisha
       ? VIDISHA_05_NOV_ROWS
       : base.rows.map((r) => ({ ...r, priceChange: 0 }));
@@ -1243,7 +1334,7 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
   const referenceDateStr = latestCustom
     ? latestCustom.date
     : isGanjbasoda
-    ? '16-11-2026'
+    ? '23-11-2026'
     : isVidisha
     ? '05-11-2026'
     : base.date;
@@ -1251,7 +1342,7 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
   const referenceContracts = latestCustom
     ? latestCustom.totalContracts
     : isGanjbasoda
-    ? '1,898'
+    ? '1,603'
     : isVidisha
     ? '1,371'
     : base.totalContracts;
@@ -1259,7 +1350,7 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
   const referenceArrival = latestCustom
     ? latestCustom.totalArrival
     : isGanjbasoda
-    ? '38,416'
+    ? '32,859'
     : isVidisha
     ? '28,992'
     : base.totalArrival;
@@ -1346,8 +1437,8 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
         releaseTime: `मंडी ${dateMeta.dayName} अवकाश (${dateMeta.hindiDate})`,
         status: 'closed',
         closedReason: `दिनांक ${dateMeta.dateSlash} (${dateMeta.dayName}) को साप्ताहिक मंडी अवकाश रहा। नीचे अंतिम कार्य दिवस के संदर्भ भाव प्रदर्शित हैं।`,
-        totalContracts: isGanjbasoda ? '1,898 (संदर्भ)' : isVidisha ? '1,371 (संदर्भ)' : '0 (अवकाश)',
-        totalArrival: isGanjbasoda ? '38,416 बोरी (संदर्भ)' : isVidisha ? '28,992 क्विंटल (संदर्भ)' : '0 (अवकाश)',
+        totalContracts: isGanjbasoda ? '1,603 (संदर्भ)' : isVidisha ? '1,371 (संदर्भ)' : '0 (अवकाश)',
+        totalArrival: isGanjbasoda ? '32,859 बोरी (संदर्भ)' : isVidisha ? '28,992 क्विंटल (संदर्भ)' : '0 (अवकाश)',
         rows: getReferenceRows(),
       };
     }
@@ -1370,10 +1461,10 @@ export function getPatrakForDate(mandiId: string, dateOption: DateOptionKey): Ma
         date: dateMeta.dateStr,
         releaseTime: dateMeta.bulletinTime,
         status: 'open',
-        totalContracts: 1898,
-        totalArrival: '38,416',
+        totalContracts: 1603,
+        totalArrival: '32,859',
         arrivalUnit: 'बोरी',
-        rows: GANJBASODA_16_NOV_ROWS,
+        rows: GANJBASODA_23_NOV_ROWS,
       };
     }
 

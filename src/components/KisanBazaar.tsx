@@ -533,9 +533,9 @@ export const KisanBazaar: React.FC<KisanBazaarProps> = ({ userProfile }) => {
     let savedToCloudOrServer = false;
 
     try {
-      // 1. Try permanent Firestore Cloud publish if signed in with Google & video <= ~5.8 MB
+      // 1. Try permanent Firestore Cloud publish if signed in with Google & video <= ~10.2 MB (20 Firestore chunks)
       const canTryFirestoreVideo =
-        !selectedVideoFile || selectedVideoFile.size <= 5.5 * 1024 * 1024;
+        !selectedVideoFile || selectedVideoFile.size <= 10.2 * 1024 * 1024;
 
       if (currentUser && currentUser.emailVerified && canTryFirestoreVideo) {
         try {
@@ -1520,12 +1520,12 @@ export const KisanBazaar: React.FC<KisanBazaarProps> = ({ userProfile }) => {
                   className="hidden"
                 />
 
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                   <label className="font-black text-emerald-950 text-xs sm:text-sm block">
                     📸 गैलरी या कैमरे से अपलोड करें:
                   </label>
                   <span className="text-[10px] bg-rose-100 text-rose-900 font-bold px-2 py-0.5 rounded-full">
-                    रील अधिकतम 20 MB
+                    {currentUser ? '☁️ 10 MB तक स्थायी क्लाउड • अधिकतम 20 MB' : 'रील अधिकतम 20 MB (Google लॉगिन से स्थायी सेव)'}
                   </span>
                 </div>
 

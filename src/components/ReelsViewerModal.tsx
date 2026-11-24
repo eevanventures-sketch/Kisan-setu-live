@@ -39,17 +39,30 @@ function cleanDigits(phone: string): string {
   return digits.slice(-10);
 }
 
-function getYouTubeEmbedUrl(url?: string): string | null {
+function getExternalEmbedUrl(url?: string): string | null {
   if (!url) return null;
   const trimmed = url.trim();
-  const match =
+  const ytMatch =
     trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/) ||
     trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/) ||
-    trimmed.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
-  if (match && match[1]) {
-    return `https://www.youtube.com/embed/${match[1]}?autoplay=1&rel=0&playsinline=1`;
+    trimmed.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/) ||
+    trimmed.match(/youtube\.com\/live\/([a-zA-Z0-9_-]{11})/);
+  if (ytMatch && ytMatch[1]) {
+    return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0&playsinline=1`;
+  }
+  const driveMatch = trimmed.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (driveMatch && driveMatch[1]) {
+    return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
   }
   return null;
+}
+
+function isPlayableDirectMediaUrl(url?: string): boolean {
+  if (!url) return false;
+  const u = url.trim().toLowerCase();
+  if (u.startsWith('blob:') || u.startsWith('data:video/')) return true;
+  if (u.includes('/api/bazaar/media/')) return true;
+  return /\.(mp4|webm|mov|m4v|3gp|mkv|ogv)(\?.*)?$/i.test(u);
 }
 
 export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
@@ -67,14 +80,17 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const cloudFallbackTriedRef = useRef<Record<string, boolean>>({});
 
   const [activeIndex, setActiveIndex] = useState(
     Math.max(0, Math.min(initialIndex, reels.length - 1))
   );
   const [isMuted, setIsMuted] = useState(false);
   const [pausedMap, setPausedMap] = useState<Record<string, boolean>>({});
+  const [bufferingMap, setBufferingMap] = useState<Record<string, boolean>>({});
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [errorMap, setErrorMap] = useState<Record<string, string>>({});
+  const [progressMap, setProgressMap] = useState<Record<string, number>>({});
   const [expandedDescId, setExpandedDescId] = useState<string | null>(null);
 
   // Lock body scroll while Reels viewer is open
@@ -94,34 +110,63 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
     }
   }, [initialIndex]);
 
+  const attemptPlayElement = React.useCallback(
+    (vid: HTMLVideoElement | null, id: string, preferUnmuted = false) => {
+      if (!vid) return;
+      vid.muted = preferUnmuted ? false : isMuted;
+      const p = vid.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch((err: any) => {
+          const errName = String(err?.name || '');
+          // If browser blocked unmuted autoplay, fallback silently to muted autoplay
+          if (errName === 'NotAllowedError' || !vid.muted) {
+            vid.muted = true;
+            setIsMuted(true);
+            vid.play().catch(() => {
+              setPausedMap((prev) => ({ ...prev, [id]: true }));
+            });
+          } else {
+            setPausedMap((prev) => ({ ...prev, [id]: true }));
+          }
+        });
+      }
+    },
+    [isMuted]
+  );
+
   // Resolve playable URL for the currently visible reel (and preload next one)
   useEffect(() => {
     const ensurePlayable = async (item: MarketListing | undefined) => {
       if (!item) return;
       if (resolvedVideoUrls[item.id]) return;
 
-      if (item.videoUrl) {
-        const u = item.videoUrl.startsWith('/api/') ? getApiUrl(item.videoUrl) : item.videoUrl;
-        onResolveVideoUrl(item.id, u);
-        return;
-      }
-      if (item.externalVideoUrl) {
-        onResolveVideoUrl(item.id, item.externalVideoUrl);
-        return;
-      }
       if (item.videoMediaId) {
         setLoadingMap((prev) => ({ ...prev, [item.id]: true }));
         try {
           const blobUrl = await loadCloudBazaarVideoUrl(item.videoMediaId, item.videoMimeType);
           onResolveVideoUrl(item.id, blobUrl);
+          return;
         } catch {
-          setErrorMap((prev) => ({
-            ...prev,
-            [item.id]: 'यह वीडियो अभी लोड नहीं हो सका। इंटरनेट जांचकर दोबारा देखें।',
-          }));
+          // If Firestore chunk lookup failed, fall through to videoUrl / externalVideoUrl if available
+          if (!item.videoUrl && !item.externalVideoUrl) {
+            setErrorMap((prev) => ({
+              ...prev,
+              [item.id]: 'यह वीडियो अभी लोड नहीं हो सका। इंटरनेट जांचकर दोबारा प्रयास करें।',
+            }));
+          }
         } finally {
           setLoadingMap((prev) => ({ ...prev, [item.id]: false }));
         }
+      }
+
+      if (item.videoUrl) {
+        const u = item.videoUrl.startsWith('/api/') ? getApiUrl(item.videoUrl) : item.videoUrl;
+        onResolveVideoUrl(item.id, u);
+        return;
+      }
+
+      if (item.externalVideoUrl) {
+        onResolveVideoUrl(item.id, item.externalVideoUrl);
       }
     };
 
@@ -161,22 +206,13 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
       const vid = videoRefs.current[item.id];
       if (!vid) return;
 
-      if (idx === activeIndex && !pausedMap[item.id]) {
-        vid.muted = isMuted;
-        const playPromise = vid.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(() => {
-            // Browser blocked unmuted autoplay on swipe -> mute and auto-play cleanly
-            vid.muted = true;
-            setIsMuted(true);
-            vid.play().catch(() => {});
-          });
-        }
-      } else {
+      if (idx === activeIndex && !pausedMap[item.id] && !errorMap[item.id]) {
+        attemptPlayElement(vid, item.id);
+      } else if (!vid.paused) {
         vid.pause();
       }
     });
-  }, [activeIndex, reels, resolvedVideoUrls, isMuted, pausedMap]);
+  }, [activeIndex, reels, resolvedVideoUrls, isMuted, pausedMap, errorMap, attemptPlayElement]);
 
   // Keyboard navigation (Escape / ArrowUp / ArrowDown) for desktop users
   useEffect(() => {
@@ -198,10 +234,67 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
     if (!vid) return;
     if (vid.paused) {
       setPausedMap((prev) => ({ ...prev, [id]: false }));
-      vid.play().catch(() => {});
+      attemptPlayElement(vid, id);
     } else {
       setPausedMap((prev) => ({ ...prev, [id]: true }));
       vid.pause();
+    }
+  };
+
+  const handleVideoElementError = async (item: MarketListing) => {
+    setBufferingMap((prev) => ({ ...prev, [item.id]: false }));
+
+    // If current URL failed (e.g. Render ephemeral /api/bazaar/media/* cleared) and Firestore chunks exist, try loading from Firestore
+    if (item.videoMediaId && !cloudFallbackTriedRef.current[item.id]) {
+      cloudFallbackTriedRef.current[item.id] = true;
+      setLoadingMap((prev) => ({ ...prev, [item.id]: true }));
+      try {
+        const blobUrl = await loadCloudBazaarVideoUrl(item.videoMediaId, item.videoMimeType);
+        onResolveVideoUrl(item.id, blobUrl);
+        setErrorMap((prev) => {
+          const next = { ...prev };
+          delete next[item.id];
+          return next;
+        });
+        setLoadingMap((prev) => ({ ...prev, [item.id]: false }));
+        return;
+      } catch {
+        setLoadingMap((prev) => ({ ...prev, [item.id]: false }));
+      }
+    }
+
+    setErrorMap((prev) => ({
+      ...prev,
+      [item.id]: item.videoUrl?.includes('/api/bazaar/media/')
+        ? 'यह पुराना वीडियो सर्वर रीस्टार्ट के कारण उपलब्ध नहीं है। कृपया नई रील अपलोड करें (अब क्लाउड में स्थायी रूप से सेव होती है)।'
+        : 'आपके ब्राउज़र में यह वीडियो फ़ॉर्मेट नहीं चल पा रहा है। कृपया नई MP4 रील अपलोड करें।',
+    }));
+  };
+
+  const handleRetryLoad = async (item: MarketListing) => {
+    setErrorMap((prev) => {
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
+    setPausedMap((prev) => ({ ...prev, [item.id]: false }));
+    const vid = videoRefs.current[item.id];
+    if (vid) {
+      vid.load();
+      attemptPlayElement(vid, item.id);
+    } else if (item.videoMediaId) {
+      setLoadingMap((prev) => ({ ...prev, [item.id]: true }));
+      try {
+        const blobUrl = await loadCloudBazaarVideoUrl(item.videoMediaId, item.videoMimeType);
+        onResolveVideoUrl(item.id, blobUrl);
+      } catch {
+        setErrorMap((prev) => ({
+          ...prev,
+          [item.id]: 'वीडियो पुनः लोड नहीं हो सका। कृपया इंटरनेट जांचें।',
+        }));
+      } finally {
+        setLoadingMap((prev) => ({ ...prev, [item.id]: false }));
+      }
     }
   };
 
@@ -233,14 +326,29 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
         <div className="flex items-center gap-2 pointer-events-auto">
           <button
             type="button"
-            onClick={() => setIsMuted((m) => !m)}
-            className="min-h-[44px] min-w-[44px] px-3 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            onClick={() => {
+              const nextMuted = !isMuted;
+              setIsMuted(nextMuted);
+              const activeItem = reels[activeIndex];
+              const vid = activeItem ? videoRefs.current[activeItem.id] : null;
+              if (vid) {
+                vid.muted = nextMuted;
+                if (!nextMuted && vid.paused) {
+                  vid.play().catch(() => {});
+                }
+              }
+            }}
+            className={`min-h-[44px] min-w-[44px] px-3 rounded-full backdrop-blur-md border text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer ${
+              isMuted
+                ? 'bg-rose-950/80 border-rose-400/60 hover:bg-rose-900'
+                : 'bg-black/60 border-white/20 hover:bg-black/80'
+            }`}
             title={isMuted ? 'आवाज़ चालू करें' : 'म्यूट करें'}
           >
             {isMuted ? (
               <>
                 <VolumeX className="w-4 h-4 text-rose-400" />
-                <span className="hidden sm:inline">म्यूट</span>
+                <span className="hidden sm:inline">आवाज़ बंद</span>
               </>
             ) : (
               <>
@@ -294,10 +402,15 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
       >
         {reels.map((item, idx) => {
           const playUrl = resolvedVideoUrls[item.id];
-          const ytEmbed = getYouTubeEmbedUrl(playUrl || item.externalVideoUrl);
+          const externalEmbed = getExternalEmbedUrl(playUrl || item.externalVideoUrl);
+          const isDirectPlayable = isPlayableDirectMediaUrl(playUrl);
+          const isNonDirectExternalLink =
+            Boolean(playUrl) && !externalEmbed && !isDirectPlayable;
           const isLoading = Boolean(loadingMap[item.id]);
+          const isBuffering = Boolean(bufferingMap[item.id]);
           const loadErr = errorMap[item.id];
           const isPaused = Boolean(pausedMap[item.id]);
+          const progressPct = progressMap[item.id] || 0;
           const isLiked = Boolean(likedIds[item.id]);
           const digits = cleanDigits(item.phone);
           const isExpanded = expandedDescId === item.id;
@@ -314,15 +427,37 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
             >
               {/* Centered Phone-like 9:16 Stage on Desktop, Full-Screen Edge-to-Edge on Mobile */}
               <div className="relative w-full h-full md:max-w-[460px] md:h-[94dvh] md:rounded-3xl overflow-hidden bg-neutral-950 md:border md:border-white/15 shadow-2xl">
-                {ytEmbed && isActive ? (
+                {externalEmbed && isActive ? (
                   <iframe
-                    src={ytEmbed}
+                    src={externalEmbed}
                     title={item.title[language]}
                     className="w-full h-full border-0"
                     allow="autoplay; encrypted-media; picture-in-picture"
                     allowFullScreen
                   />
-                ) : playUrl ? (
+                ) : isNonDirectExternalLink ? (
+                  <div className="w-full h-full relative flex items-center justify-center bg-neutral-900">
+                    {item.imageUrl && (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.title[language]}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover opacity-75"
+                      />
+                    )}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center bg-black/50">
+                      <a
+                        href={playUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-black text-sm flex items-center gap-2 shadow-xl border border-white/30"
+                      >
+                        <Play className="w-5 h-5 fill-white" />
+                        <span>पूरा वीडियो लिंक खोलें ↗</span>
+                      </a>
+                    </div>
+                  </div>
+                ) : playUrl && !loadErr ? (
                   <div
                     onClick={() => togglePlayPause(item.id)}
                     className="w-full h-full relative cursor-pointer flex items-center justify-center bg-black"
@@ -333,19 +468,100 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
                       }}
                       src={playUrl}
                       poster={item.imageUrl || undefined}
+                      autoPlay={isActive}
                       playsInline
                       loop
                       muted={isMuted}
                       preload={Math.abs(idx - activeIndex) <= 1 ? 'auto' : 'metadata'}
-                      className="w-full h-full object-cover"
+                      onLoadedData={(e) => {
+                        setBufferingMap((prev) => ({ ...prev, [item.id]: false }));
+                        if (isActive && !pausedMap[item.id]) {
+                          attemptPlayElement(e.currentTarget, item.id);
+                        }
+                      }}
+                      onCanPlay={(e) => {
+                        setBufferingMap((prev) => ({ ...prev, [item.id]: false }));
+                        if (isActive && e.currentTarget.paused && !pausedMap[item.id]) {
+                          attemptPlayElement(e.currentTarget, item.id);
+                        }
+                      }}
+                      onPlay={() => {
+                        setPausedMap((prev) => ({ ...prev, [item.id]: false }));
+                        setBufferingMap((prev) => ({ ...prev, [item.id]: false }));
+                      }}
+                      onPlaying={() => {
+                        setPausedMap((prev) => ({ ...prev, [item.id]: false }));
+                        setBufferingMap((prev) => ({ ...prev, [item.id]: false }));
+                      }}
+                      onPause={() => {
+                        if (idx === activeIndex) {
+                          setPausedMap((prev) => ({ ...prev, [item.id]: true }));
+                        }
+                      }}
+                      onWaiting={() => {
+                        if (idx === activeIndex) {
+                          setBufferingMap((prev) => ({ ...prev, [item.id]: true }));
+                        }
+                      }}
+                      onTimeUpdate={(e) => {
+                        const v = e.currentTarget;
+                        if (v.duration && Number.isFinite(v.duration)) {
+                          const pct = Math.min(100, Math.max(0, (v.currentTime / v.duration) * 100));
+                          setProgressMap((prev) => ({ ...prev, [item.id]: pct }));
+                        }
+                      }}
+                      onError={() => {
+                        void handleVideoElementError(item);
+                      }}
+                      className="w-full h-full object-contain bg-black"
                     />
-                    {isPaused && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/25 pointer-events-none">
-                        <div className="w-20 h-20 rounded-full bg-black/65 border-2 border-white/80 flex items-center justify-center">
-                          <Play className="w-10 h-10 fill-white text-white ml-1" />
+
+                    {/* Buffering indicator */}
+                    {isBuffering && !isPaused && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="px-4 py-2 rounded-full bg-black/70 border border-white/20 flex items-center gap-2 text-xs font-bold">
+                          <Loader2 className="w-5 h-5 animate-spin text-amber-300" />
+                          <span>वीडियो चल रहा है...</span>
                         </div>
                       </div>
                     )}
+
+                    {/* Tap-to-Play overlay when paused or waiting for user interaction */}
+                    {isPaused && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30 pointer-events-none">
+                        <div className="w-20 h-20 rounded-full bg-rose-600/90 border-2 border-white flex items-center justify-center shadow-2xl">
+                          <Play className="w-10 h-10 fill-white text-white ml-1" />
+                        </div>
+                        <span className="px-3 py-1 rounded-full bg-black/70 text-xs font-black text-amber-300">
+                          ▶️ वीडियो चलाने के लिए टैप करें
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Subtle muted notice on active playing reel */}
+                    {isActive && isMuted && !isPaused && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsMuted(false);
+                          const vid = videoRefs.current[item.id];
+                          if (vid) vid.muted = false;
+                        }}
+                        className="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-3 py-1 rounded-full bg-black/75 border border-amber-300/60 text-amber-200 text-[11px] font-black flex items-center gap-1.5 shadow-lg cursor-pointer"
+                      >
+                        <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                        <span>आवाज़ बंद है — चालू करने के लिए दबाएं</span>
+                      </button>
+                    )}
+
+                    {/* Slim Video Progress Bar at Bottom */}
+                    <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20 z-30 pointer-events-none">
+                      <div
+                        className="h-full bg-amber-400 transition-all duration-150"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
                   </div>
                 ) : (
                   <div className="w-full h-full relative flex items-center justify-center bg-neutral-900">
@@ -354,19 +570,42 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
                         src={item.imageUrl}
                         alt={item.title[language]}
                         referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover opacity-70"
+                        className="w-full h-full object-cover opacity-55"
                       />
                     )}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center bg-black/40">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center bg-black/55">
                       {isLoading ? (
                         <>
                           <Loader2 className="w-12 h-12 animate-spin text-amber-300" />
                           <span className="text-sm font-bold text-white">
-                            रील लोड हो रही है...
+                            क्लाउड से रील लोड हो रही है...
                           </span>
                         </>
                       ) : loadErr ? (
-                        <span className="text-sm font-bold text-rose-300">{loadErr}</span>
+                        <div className="max-w-xs space-y-3 bg-black/80 border border-rose-400/50 rounded-2xl p-4">
+                          <p className="text-xs sm:text-sm font-bold text-rose-200 leading-relaxed">
+                            ⚠️ {loadErr}
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleRetryLoad(item)}
+                              className="px-3.5 py-2 rounded-xl bg-white text-black font-black text-xs cursor-pointer"
+                            >
+                              🔄 पुनः प्रयास करें
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                onUploadReel();
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-rose-600 text-white font-black text-xs cursor-pointer"
+                            >
+                              + नई रील अपलोड करें
+                            </button>
+                          </div>
+                        </div>
                       ) : (
                         <Loader2 className="w-10 h-10 animate-spin text-white/80" />
                       )}
@@ -375,7 +614,7 @@ export const ReelsViewerModal: React.FC<ReelsViewerModalProps> = ({
                 )}
 
                 {/* Bottom Gradient Scrim for 4.5:1+ Text Contrast */}
-                <div className="absolute inset-x-0 bottom-0 h-[52%] bg-gradient-to-t from-black/95 via-black/60 to-transparent pointer-events-none" />
+                <div className="absolute inset-x-0 bottom-0 h-[44%] bg-gradient-to-t from-black/95 via-black/55 to-transparent pointer-events-none" />
 
                 {/* Right-Side Instagram/Facebook Style Action Stack */}
                 <div className="absolute right-3 bottom-20 sm:bottom-8 z-20 flex flex-col items-center gap-4">

@@ -106,7 +106,7 @@ export const MandiPatrakView: React.FC = () => {
   const [show7DayComparison, setShow7DayComparison] = useState<boolean>(true);
   const [comparisonCrop, setComparisonCrop] = useState<string>('सोयाबीन');
   const [showOfficialCertificateModal, setShowOfficialCertificateModal] = useState<boolean>(false);
-  const [selectedSheetPhoto, setSelectedSheetPhoto] = useState<string>('ganjbasoda-16');
+  const [selectedSheetPhoto, setSelectedSheetPhoto] = useState<string>('ganjbasoda-23');
   const [modalViewMode, setModalViewMode] = useState<'photo' | 'table'>('photo');
   const [linkCopiedPortal, setLinkCopiedPortal] = useState<string | null>(null);
   const [customVersion, setCustomVersion] = useState<number>(0);
@@ -240,14 +240,21 @@ export const MandiPatrakView: React.FC = () => {
 
         const data = await res.json();
         if (data?.patrak && Array.isArray(data.patrak.rows) && data.patrak.rows.length > 0) {
-          saveCustomPatrak(data.patrak);
-          setCustomVersion((v) => v + 1);
+          const pKey = `${data.patrak.mandiId}__${data.patrak.date}`;
+          const mergedCount = mergeSharedPatraks({ [pKey]: data.patrak });
+          if (mergedCount > 0) {
+            setCustomVersion((v) => v + 1);
+          }
 
-          if (data.foundToday) {
+          if (mergedCount === 0 && !silent) {
+            setSyncNotice(
+              `✅ ${data.patrak.date} का पूर्ण सत्यापित मंडी समिति पत्रक पहले से सुरक्षित है (सभी जिंस व बोरी रिकॉर्ड अद्यतित हैं)।`
+            );
+          } else if (data.foundToday) {
             setSyncNotice(
               data.message || `✅ आज (${data.patrak.date}) के ताज़ा मंडी भाव स्वतः अद्यतित हो गए!`
             );
-            if (isAdmin) {
+            if (isAdmin && mergedCount > 0) {
               try {
                 await publishMandiPatrakToCloud({
                   mandiId: selectedMandiId,
@@ -266,7 +273,7 @@ export const MandiPatrakView: React.FC = () => {
                 // shared server file already persisted
               }
             }
-          } else {
+          } else if (mergedCount > 0) {
             setSyncNotice(
               data.message || `✅ नवीनतम उपलब्ध मंडी पत्रक (${data.patrak.date}) स्वतः अद्यतित!`
             );
@@ -989,7 +996,7 @@ export const MandiPatrakView: React.FC = () => {
             onClick={() => setShowOfficialCertificateModal(true)}
             className="px-3 py-1 bg-amber-400 hover:bg-amber-300 text-emerald-950 rounded-lg font-black text-xs shrink-0 cursor-pointer shadow-xs"
           >
-            📜 सत्यापित मूल पत्रक (16 Nov सहित) देखें
+            📜 सत्यापित मूल पत्रक (23 Nov सहित) देखें
           </button>
         </div>
       </div>
@@ -1528,6 +1535,21 @@ export const MandiPatrakView: React.FC = () => {
               </div>
             </div>
           )}
+
+          {currentPatrak.isVerifiedForDate && String(currentPatrak.totalContracts) === '-' && (
+            <div className="mt-3 max-w-2xl mx-auto p-2.5 rounded-xl bg-blue-50 border border-blue-300 text-blue-950 text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-between gap-2 text-left">
+              <span>
+                ℹ️ <strong>ऑनलाइन पोर्टल सूचना:</strong> Agmarknet पर अभी केवल {currentPatrak.rows.length} प्रमुख फसलों की क्विंटल दरें ही जारी हुई हैं। मंडी समिति की सभी 18 फसलों (शरवती, बटरी, तिवड़ा आदि) व बोरी/अनुबंध सहित पूर्ण पत्रक के लिए WhatsApp फोटो अपलोड करें।
+              </span>
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="px-2.5 py-1 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-amber-300 font-black text-[11px] shrink-0 cursor-pointer"
+              >
+                📸 पूरा पत्रक स्कैन करें
+              </button>
+            </div>
+          )}
         </div>
 
         {/* If Mandi is closed, display prominent closure banner */}
@@ -1935,7 +1957,8 @@ export const MandiPatrakView: React.FC = () => {
             {/* Sheet Selector Tabs */}
             <div className="p-3 bg-emerald-900 border-b border-emerald-800 flex flex-wrap gap-1.5">
               {[
-                { id: 'ganjbasoda-16', label: 'गंजबासौदा (16/11 - नवीनतम)', detail: '38,416 बोरी • 1,898 अनुबंध (सत्यापित)' },
+                { id: 'ganjbasoda-23', label: 'गंजबासौदा (23/11 - नवीनतम)', detail: '32,859 बोरी • 1,603 अनुबंध (18 जिंसें)' },
+                { id: 'ganjbasoda-16', label: 'गंजबासौदा (16/11)', detail: '38,416 बोरी • 1,898 अनुबंध (सत्यापित)' },
                 { id: 'ganjbasoda-05', label: 'गंजबासौदा (05/11)', detail: '35,731 बोरी • 1,671 अनुबंध' },
                 { id: 'ganjbasoda-04', label: 'गंजबासौदा (04/11)', detail: '41,117 बोरी • 1,959 अनुबंध' },
                 { id: 'vidisha-04', label: 'विदिशा (04/11)', detail: '28,347 क्विंटल • 1,338 अनुबंध' },
@@ -1963,10 +1986,16 @@ export const MandiPatrakView: React.FC = () => {
             <div className="p-4 sm:p-6 space-y-4 max-h-[70vh] overflow-y-auto bg-gray-50">
               {(() => {
                 const sheetConfig: { [key: string]: { title: string; date: string; arrival: string; img: string } } = {
+                  'ganjbasoda-23': {
+                    title: 'कार्यालय कृषि उपज मंडी समिति गंजबासौदा जिला विदिशा',
+                    date: 'दिनांक 23/11/2026',
+                    arrival: 'कुल अनुबंध 1,603 • कुल आवक 32,859 बोरी (18 जिंसें • सत्यापित नवीनतम पत्रक)',
+                    img: './assets/aistudio/IMG-20261123-WA0006_24e4c97e.jpg',
+                  },
                   'ganjbasoda-16': {
                     title: 'कार्यालय कृषि उपज मंडी समिति गंजबासौदा जिला विदिशा',
                     date: 'दिनांक 16/11/2026',
-                    arrival: 'कुल अनुबंध 1,898 • कुल आवक 38,416 बोरी (सत्यापित नवीनतम पत्रक)',
+                    arrival: 'कुल अनुबंध 1,898 • कुल आवक 38,416 बोरी (सत्यापित पत्रक)',
                     img: './assets/aistudio/IMG-20261117-WA0001_4ac8d7f9.jpg',
                   },
                   'ganjbasoda-05': {
@@ -2013,7 +2042,7 @@ export const MandiPatrakView: React.FC = () => {
                   },
                 };
 
-                const current = sheetConfig[selectedSheetPhoto] || sheetConfig['ganjbasoda-05'];
+                const current = sheetConfig[selectedSheetPhoto] || sheetConfig['ganjbasoda-23'];
 
                 return (
                   <div className="space-y-3">

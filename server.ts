@@ -306,21 +306,67 @@ function readSharedPatraks(): Record<string, any> {
   }
 }
 
-function writeSharedPatrak(key: string, entry: any): void {
+function isServerRichPatrak(p: any): boolean {
+  if (!p || !Array.isArray(p.rows) || p.rows.length === 0) return false;
+  const cStr = String(p.totalContracts ?? '').trim();
+  const hasContracts = cStr !== '' && cStr !== '-' && cStr !== '0';
+  const rel = String(p.releaseTime || '');
+  const isScannedOrOfficial =
+    rel.includes('स्कैन') || rel.includes('कार्यालय') || rel.includes('सत्यापित') || rel.includes('मंडी समिति');
+  const hasRowContracts = p.rows.some(
+    (r: any) =>
+      r &&
+      r.contracts !== undefined &&
+      r.contracts !== null &&
+      String(r.contracts).trim() !== '-' &&
+      Number(r.contracts) > 0
+  );
+  return hasContracts || isScannedOrOfficial || hasRowContracts;
+}
+
+function isEmbeddedOfficialPatrakKey(mandiId?: string, date?: string): boolean {
+  return mandiId === 'mp-vidisha-ganjbasoda' && (date === '16-11-2026' || date === '23-11-2026');
+}
+
+function writeSharedPatrak(key: string, entry: any): boolean {
   try {
     if (!fs.existsSync(SHARED_PATRAK_DIR)) {
       fs.mkdirSync(SHARED_PATRAK_DIR, { recursive: true });
     }
     const all = readSharedPatraks();
+    const existing = all[key];
+    const incomingRich = isServerRichPatrak(entry);
+
+    // Never allow a sparse Agmarknet scrape (totalContracts: '-') to overwrite a rich photo-scanned
+    // or complete embedded official 18-crop Mandi Samiti sheet.
+    if (!incomingRich) {
+      if (isEmbeddedOfficialPatrakKey(entry?.mandiId, entry?.date)) {
+        return false;
+      }
+      if (existing && isServerRichPatrak(existing)) {
+        return false;
+      }
+    }
+
     all[key] = entry;
     fs.writeFileSync(SHARED_PATRAK_FILE, JSON.stringify(all, null, 2), 'utf-8');
+    return true;
   } catch (err: any) {
     console.warn('Could not persist shared patrak:', err?.message);
+    return false;
   }
 }
 
 app.get('/api/mandi/shared-patraks', (_req, res) => {
-  res.json({ patraks: readSharedPatraks() });
+  const raw = readSharedPatraks();
+  const filtered: Record<string, any> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v && !isServerRichPatrak(v) && isEmbeddedOfficialPatrakKey(v.mandiId, v.date)) {
+      continue;
+    }
+    filtered[k] = v;
+  }
+  res.json({ patraks: filtered });
 });
 
 // Shared server-side Kisan Bazaar listings & Reels media persistence
@@ -944,6 +990,18 @@ async function performMandiAutoSync(params: {
 
   const allStored = readSharedPatraks();
   const existingToday = allStored[cacheKey];
+  if (existingToday && isServerRichPatrak(existingToday)) {
+    return {
+      synced: true,
+      cached: true,
+      foundToday: true,
+      date,
+      source: existingToday.sourceLabel || 'सत्यापित मंडी समिति पत्रक',
+      sourceUrls: Array.isArray(existingToday.sourceUrls) ? existingToday.sourceUrls : [],
+      patrak: existingToday,
+      message: `आज (${date}) का पूर्ण सत्यापित मंडी समिति पत्रक पहले से सुरक्षित है।`,
+    };
+  }
   if (
     !force &&
     existingToday &&
@@ -1052,7 +1110,20 @@ async function performMandiAutoSync(params: {
                 rows,
                 updatedAt: new Date().toISOString(),
               };
-              writeSharedPatrak(`${mandiId}__${recDate}`, entry);
+              const targetKey = `${mandiId}__${recDate}`;
+              const existingRec = readSharedPatraks()[targetKey];
+              if (isEmbeddedOfficialPatrakKey(mandiId, recDate) || (existingRec && isServerRichPatrak(existingRec))) {
+                return {
+                  synced: Boolean(existingRec && isServerRichPatrak(existingRec)),
+                  foundToday: recDate === date,
+                  date: recDate,
+                  source: existingRec?.sourceLabel || 'सत्यापित मंडी समिति पत्रक',
+                  sourceUrls: existingRec?.sourceUrls || entry.sourceUrls,
+                  patrak: existingRec && isServerRichPatrak(existingRec) ? existingRec : undefined,
+                  message: `📌 ${recDate} का पूर्ण सत्यापित मंडी समिति पत्रक सुरक्षित है — आंशिक वेब सूची से इसे बदला नहीं गया।`,
+                };
+              }
+              writeSharedPatrak(targetKey, entry);
               return {
                 synced: true,
                 foundToday: recDate === date,
@@ -1060,7 +1131,7 @@ async function performMandiAutoSync(params: {
                 source: 'data.gov.in',
                 sourceUrls: entry.sourceUrls,
                 patrak: entry,
-                message: `✅ सरकारी पोर्टल Agmarknet से ${recDate} के ${rows.length} जिंसों के भाव स्वतः प्राप्त हुए!`,
+                message: `✅ सरकारी पोर्टल Agmarknet से ${recDate} के ${rows.length} प्रमुख जिंसों के भाव स्वतः प्राप्त हुए!`,
               };
             }
           }
@@ -1222,7 +1293,25 @@ async function performMandiAutoSync(params: {
               updatedAt: new Date().toISOString(),
             };
 
-            writeSharedPatrak(`${mandiId}__${chosenDate}`, entry);
+            const targetKey = `${mandiId}__${chosenDate}`;
+            const existingChosen = readSharedPatraks()[targetKey];
+            if (isEmbeddedOfficialPatrakKey(mandiId, chosenDate) || (existingChosen && isServerRichPatrak(existingChosen))) {
+              negativeSyncCooldown.set(cacheKey, Date.now() + 10 * 60 * 1000);
+              return {
+                synced: Boolean(existingChosen && isServerRichPatrak(existingChosen)),
+                foundToday: chosenDate === date,
+                date: chosenDate,
+                source: existingChosen?.sourceLabel || 'सत्यापित मंडी समिति पत्रक',
+                sourceUrls: existingChosen?.sourceUrls || uniqueSources,
+                patrak: existingChosen && isServerRichPatrak(existingChosen) ? existingChosen : undefined,
+                message:
+                  chosenDate === date
+                    ? `📌 आज (${chosenDate}) का पूर्ण सत्यापित मंडी समिति पत्रक सुरक्षित है।`
+                    : `📌 ${chosenDate} का पूर्ण 18-फसल मंडी समिति पत्रक सुरक्षित है (आज ${date} की नई सूची अभी ऑनलाइन नहीं आई है)।`,
+              };
+            }
+
+            writeSharedPatrak(targetKey, entry);
             negativeSyncCooldown.delete(cacheKey);
 
             return {
@@ -1234,8 +1323,8 @@ async function performMandiAutoSync(params: {
               patrak: entry,
               message:
                 chosenDate === date
-                  ? `✅ आज (${chosenDate}) के ${finalRows.length} जिंसों के ताज़ा मंडी भाव स्वतः अद्यतित हो गए!`
-                  : `✅ नवीनतम उपलब्ध मंडी पत्रक (${chosenDate} • ${finalRows.length} जिंसें) स्वतः अद्यतित!`,
+                  ? `✅ आज (${chosenDate}) के ${finalRows.length} प्रमुख जिंसों के ऑनलाइन भाव स्वतः अद्यतित हो गए!`
+                  : `✅ ऑनलाइन पोर्टल पर उपलब्ध ${chosenDate} की ${finalRows.length} प्रमुख जिंसें अद्यतित (पूर्ण ब्यौरे हेतु पत्रक फोटो स्कैन करें)।`,
             };
           }
         }
@@ -1488,7 +1577,22 @@ async function performMandiAutoSync(params: {
         updatedAt: new Date().toISOString(),
       };
 
-      writeSharedPatrak(`${mandiId}__${publishedDate}`, savedEntry);
+      const targetKey = `${mandiId}__${publishedDate}`;
+      const existingPub = readSharedPatraks()[targetKey];
+      if (!isServerRichPatrak(savedEntry) && (isEmbeddedOfficialPatrakKey(mandiId, publishedDate) || (existingPub && isServerRichPatrak(existingPub)))) {
+        negativeSyncCooldown.set(cacheKey, Date.now() + 10 * 60 * 1000);
+        return {
+          synced: Boolean(existingPub && isServerRichPatrak(existingPub)),
+          foundToday: publishedDate === date,
+          date: publishedDate,
+          source: existingPub?.sourceLabel || 'सत्यापित मंडी समिति पत्रक',
+          sourceUrls: existingPub?.sourceUrls || sourceUrls,
+          patrak: existingPub && isServerRichPatrak(existingPub) ? existingPub : undefined,
+          message: `📌 ${publishedDate} का पूर्ण सत्यापित मंडी समिति पत्रक सुरक्षित है (आज ${date} का नया पत्रक अभी जारी नहीं हुआ है)।`,
+        };
+      }
+
+      writeSharedPatrak(targetKey, savedEntry);
       negativeSyncCooldown.delete(cacheKey);
 
       return {

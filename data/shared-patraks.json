@@ -1,123 +1,11 @@
 {
-  "mp-vidisha-ganjbasoda__23-11-2026": {
-    "mandiId": "mp-vidisha-ganjbasoda",
-    "date": "23-11-2026",
-    "totalContracts": "-",
-    "totalArrival": "-",
-    "arrivalUnit": "क्विंटल",
-    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • 1 सीधी मंडी + 5 जिला मंडी • 18:23 IST)",
-    "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
-    "sourceUrls": [
-      {
-        "title": "सोयाबीन — Agmarknet लाइव",
-        "uri": "https://kisansamadhan.com/mandi-bhav/soyabean/madhya-pradesh/"
-      },
-      {
-        "title": "मसूर — Agmarknet लाइव",
-        "uri": "https://kisansamadhan.com/mandi-bhav/masur/madhya-pradesh/"
-      },
-      {
-        "title": "चना — Agmarknet लाइव",
-        "uri": "https://kisansamadhan.com/mandi-bhav/chana-bengal-gram/madhya-pradesh/"
-      },
-      {
-        "title": "धान — Agmarknet लाइव",
-        "uri": "https://kisansamadhan.com/mandi-bhav/paddy/madhya-pradesh/"
-      },
-      {
-        "title": "मक्का — Agmarknet लाइव",
-        "uri": "https://kisansamadhan.com/mandi-bhav/maize/madhya-pradesh/"
-      }
-    ],
-    "rows": [
-      {
-        "sNo": 1,
-        "cropName": "सोयाबीन",
-        "contracts": "-",
-        "arrival": "-",
-        "arrivalUnit": "क्विंटल",
-        "minPrice": 7000,
-        "maxPrice": 7000,
-        "modalPrice": 7000,
-        "yesterdayPrice": 0,
-        "priceChange": 0,
-        "msp": 5708
-      },
-      {
-        "sNo": 2,
-        "cropName": "मसूर (कुरवाई मंडी)",
-        "contracts": "-",
-        "arrival": "-",
-        "arrivalUnit": "क्विंटल",
-        "minPrice": 5500,
-        "maxPrice": 5500,
-        "modalPrice": 5500,
-        "yesterdayPrice": 5830,
-        "priceChange": -330,
-        "msp": 7000
-      },
-      {
-        "sNo": 3,
-        "cropName": "चना (विदिशा मंडी)",
-        "contracts": "-",
-        "arrival": "-",
-        "arrivalUnit": "क्विंटल",
-        "minPrice": 6700,
-        "maxPrice": 7000,
-        "modalPrice": 6950,
-        "yesterdayPrice": 0,
-        "priceChange": 0,
-        "msp": 5958
-      },
-      {
-        "sNo": 4,
-        "cropName": "धान (विदिशा मंडी)",
-        "contracts": "-",
-        "arrival": "-",
-        "arrivalUnit": "क्विंटल",
-        "minPrice": 3260,
-        "maxPrice": 5085,
-        "modalPrice": 4300,
-        "yesterdayPrice": 0,
-        "priceChange": 0,
-        "msp": 2441
-      },
-      {
-        "sNo": 5,
-        "cropName": "मक्का (कुरवाई मंडी)",
-        "contracts": "-",
-        "arrival": "-",
-        "arrivalUnit": "क्विंटल",
-        "minPrice": 2290,
-        "maxPrice": 2320,
-        "modalPrice": 2300,
-        "yesterdayPrice": 0,
-        "priceChange": 0,
-        "msp": 2410
-      },
-      {
-        "sNo": 6,
-        "cropName": "मूंग (विदिशा मंडी)",
-        "contracts": "-",
-        "arrival": "-",
-        "arrivalUnit": "क्विंटल",
-        "minPrice": 6700,
-        "maxPrice": 6700,
-        "modalPrice": 6700,
-        "yesterdayPrice": 0,
-        "priceChange": 0,
-        "msp": 8780
-      }
-    ],
-    "updatedAt": "2026-11-23T12:53:31.189Z"
-  },
   "mp-vidisha-vidisha__23-11-2026": {
     "mandiId": "mp-vidisha-vidisha",
     "date": "23-11-2026",
     "totalContracts": "-",
     "totalArrival": "-",
     "arrivalUnit": "क्विंटल",
-    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • 4 सीधी मंडी + 2 जिला मंडी • 18:23 IST)",
+    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • 5 सीधी मंडी + 0 जिला मंडी • 14:04 IST)",
     "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
     "sourceUrls": [
       {
@@ -125,12 +13,12 @@
         "uri": "https://kisansamadhan.com/mandi-bhav/chana-bengal-gram/madhya-pradesh/"
       },
       {
-        "title": "धान — Agmarknet लाइव",
-        "uri": "https://kisansamadhan.com/mandi-bhav/paddy/madhya-pradesh/"
-      },
-      {
         "title": "सोयाबीन — Agmarknet लाइव",
         "uri": "https://kisansamadhan.com/mandi-bhav/soyabean/madhya-pradesh/"
+      },
+      {
+        "title": "उड़द — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/urad-black-gram/madhya-pradesh/"
       },
       {
         "title": "मूंग — Agmarknet लाइव",
@@ -148,29 +36,115 @@
         "contracts": "-",
         "arrival": "-",
         "arrivalUnit": "क्विंटल",
+        "minPrice": 5900,
+        "maxPrice": 7390,
+        "modalPrice": 6800,
+        "yesterdayPrice": 6950,
+        "priceChange": -150,
+        "msp": 5958
+      },
+      {
+        "sNo": 2,
+        "cropName": "सोयाबीन",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 6400,
+        "maxPrice": 7886,
+        "modalPrice": 7200,
+        "yesterdayPrice": 7200,
+        "priceChange": 0,
+        "msp": 5708
+      },
+      {
+        "sNo": 3,
+        "cropName": "उड़द",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 6900,
+        "maxPrice": 7212,
+        "modalPrice": 7212,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 8200
+      },
+      {
+        "sNo": 4,
+        "cropName": "मूंग",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
         "minPrice": 6700,
-        "maxPrice": 7000,
-        "modalPrice": 6950,
+        "maxPrice": 6700,
+        "modalPrice": 6700,
+        "yesterdayPrice": 6700,
+        "priceChange": 0,
+        "msp": 8780
+      },
+      {
+        "sNo": 5,
+        "cropName": "मसूर",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 5280,
+        "maxPrice": 6300,
+        "modalPrice": 5800,
+        "yesterdayPrice": 5830,
+        "priceChange": -30,
+        "msp": 7000
+      }
+    ],
+    "updatedAt": "2026-11-24T08:34:26.272Z"
+  },
+  "mp-vidisha-sironj__23-11-2026": {
+    "mandiId": "mp-vidisha-sironj",
+    "date": "23-11-2026",
+    "totalContracts": "-",
+    "totalArrival": "-",
+    "arrivalUnit": "क्विंटल",
+    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • जिला विदिशा मंडी संकलन • 14:04 IST)",
+    "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
+    "sourceUrls": [
+      {
+        "title": "चना — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/chana-bengal-gram/madhya-pradesh/"
+      },
+      {
+        "title": "सोयाबीन — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/soyabean/madhya-pradesh/"
+      },
+      {
+        "title": "उड़द — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/urad-black-gram/madhya-pradesh/"
+      },
+      {
+        "title": "मूंग — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/moong/madhya-pradesh/"
+      },
+      {
+        "title": "मसूर — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/masur/madhya-pradesh/"
+      }
+    ],
+    "rows": [
+      {
+        "sNo": 1,
+        "cropName": "चना (विदिशा मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 5900,
+        "maxPrice": 7390,
+        "modalPrice": 6800,
         "yesterdayPrice": 0,
         "priceChange": 0,
         "msp": 5958
       },
       {
         "sNo": 2,
-        "cropName": "धान",
-        "contracts": "-",
-        "arrival": "-",
-        "arrivalUnit": "क्विंटल",
-        "minPrice": 3260,
-        "maxPrice": 5085,
-        "modalPrice": 4300,
-        "yesterdayPrice": 0,
-        "priceChange": 0,
-        "msp": 2441
-      },
-      {
-        "sNo": 3,
-        "cropName": "सोयाबीन",
+        "cropName": "सोयाबीन (विदिशा मंडी)",
         "contracts": "-",
         "arrival": "-",
         "arrivalUnit": "क्विंटल",
@@ -182,8 +156,21 @@
         "msp": 5708
       },
       {
+        "sNo": 3,
+        "cropName": "उड़द (गंजबासोदा मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 4400,
+        "maxPrice": 6500,
+        "modalPrice": 5200,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 8200
+      },
+      {
         "sNo": 4,
-        "cropName": "मूंग",
+        "cropName": "मूंग (विदिशा मंडी)",
         "contracts": "-",
         "arrival": "-",
         "arrivalUnit": "क्विंटल",
@@ -206,21 +193,441 @@
         "yesterdayPrice": 5830,
         "priceChange": -330,
         "msp": 7000
+      }
+    ],
+    "updatedAt": "2026-11-24T08:34:27.776Z"
+  },
+  "mp-sehore-sehore__23-11-2026": {
+    "mandiId": "mp-sehore-sehore",
+    "date": "23-11-2026",
+    "totalContracts": "-",
+    "totalArrival": "-",
+    "arrivalUnit": "क्विंटल",
+    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • 2 सीधी मंडी + 1 जिला मंडी • 14:04 IST)",
+    "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
+    "sourceUrls": [
+      {
+        "title": "गेहूं — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/wheat/madhya-pradesh/"
       },
       {
-        "sNo": 6,
-        "cropName": "मक्का (कुरवाई मंडी)",
+        "title": "उड़द — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/urad-black-gram/madhya-pradesh/"
+      },
+      {
+        "title": "सोयाबीन — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/soyabean/madhya-pradesh/"
+      }
+    ],
+    "rows": [
+      {
+        "sNo": 1,
+        "cropName": "गेहूं",
         "contracts": "-",
         "arrival": "-",
         "arrivalUnit": "क्विंटल",
-        "minPrice": 2290,
-        "maxPrice": 2320,
-        "modalPrice": 2300,
+        "minPrice": 3991,
+        "maxPrice": 4201,
+        "modalPrice": 4201,
         "yesterdayPrice": 0,
         "priceChange": 0,
-        "msp": 2410
+        "msp": 2625
+      },
+      {
+        "sNo": 2,
+        "cropName": "उड़द",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 8000,
+        "maxPrice": 8000,
+        "modalPrice": 8000,
+        "yesterdayPrice": 7300,
+        "priceChange": 700,
+        "msp": 8200
+      },
+      {
+        "sNo": 3,
+        "cropName": "सोयाबीन (श्यामपुर मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 4950,
+        "maxPrice": 5025,
+        "modalPrice": 5025,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 5708
       }
     ],
-    "updatedAt": "2026-11-23T12:53:31.215Z"
+    "updatedAt": "2026-11-24T08:34:29.280Z"
+  },
+  "mp-bhopal-karond__23-11-2026": {
+    "mandiId": "mp-bhopal-karond",
+    "date": "23-11-2026",
+    "totalContracts": "-",
+    "totalArrival": "-",
+    "arrivalUnit": "क्विंटल",
+    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • जिला भोपाल मंडी संकलन • 14:04 IST)",
+    "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
+    "sourceUrls": [
+      {
+        "title": "चना — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/chana-bengal-gram/madhya-pradesh/"
+      },
+      {
+        "title": "मसूर — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/masur/madhya-pradesh/"
+      }
+    ],
+    "rows": [
+      {
+        "sNo": 1,
+        "cropName": "चना (बैरसिया मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 6500,
+        "maxPrice": 6500,
+        "modalPrice": 6500,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 5958
+      },
+      {
+        "sNo": 2,
+        "cropName": "मसूर (बैरसिया मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 5200,
+        "maxPrice": 5300,
+        "modalPrice": 5300,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 7000
+      }
+    ],
+    "updatedAt": "2026-11-24T08:34:30.783Z"
+  },
+  "mp-raisen-raisen__23-11-2026": {
+    "mandiId": "mp-raisen-raisen",
+    "date": "23-11-2026",
+    "totalContracts": "-",
+    "totalArrival": "-",
+    "arrivalUnit": "क्विंटल",
+    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • जिला रायसेन मंडी संकलन • 14:04 IST)",
+    "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
+    "sourceUrls": [
+      {
+        "title": "चना — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/chana-bengal-gram/madhya-pradesh/"
+      }
+    ],
+    "rows": [
+      {
+        "sNo": 1,
+        "cropName": "चना (उदैपुरा मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 6600,
+        "maxPrice": 7165,
+        "modalPrice": 7140,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 5958
+      }
+    ],
+    "updatedAt": "2026-11-24T08:34:32.285Z"
+  },
+  "mp-sagar-sagar__23-11-2026": {
+    "mandiId": "mp-sagar-sagar",
+    "date": "23-11-2026",
+    "totalContracts": "-",
+    "totalArrival": "-",
+    "arrivalUnit": "क्विंटल",
+    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • 4 सीधी मंडी + 3 जिला मंडी • 14:04 IST)",
+    "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
+    "sourceUrls": [
+      {
+        "title": "चना — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/chana-bengal-gram/madhya-pradesh/"
+      },
+      {
+        "title": "सोयाबीन — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/soyabean/madhya-pradesh/"
+      },
+      {
+        "title": "उड़द — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/urad-black-gram/madhya-pradesh/"
+      },
+      {
+        "title": "मसूर — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/masur/madhya-pradesh/"
+      },
+      {
+        "title": "गेहूं — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/wheat/madhya-pradesh/"
+      }
+    ],
+    "rows": [
+      {
+        "sNo": 1,
+        "cropName": "चना",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 6700,
+        "maxPrice": 7060,
+        "modalPrice": 7060,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 5958
+      },
+      {
+        "sNo": 2,
+        "cropName": "सोयाबीन",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 6663,
+        "maxPrice": 7705,
+        "modalPrice": 7660,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 5708
+      },
+      {
+        "sNo": 3,
+        "cropName": "उड़द",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 3700,
+        "maxPrice": 7000,
+        "modalPrice": 7000,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 8200
+      },
+      {
+        "sNo": 4,
+        "cropName": "मसूर",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 5300,
+        "maxPrice": 7120,
+        "modalPrice": 7120,
+        "yesterdayPrice": 6000,
+        "priceChange": 1120,
+        "msp": 7000
+      },
+      {
+        "sNo": 5,
+        "cropName": "गेहूं (बीना मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 2662,
+        "maxPrice": 3290,
+        "modalPrice": 3000,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 2625
+      },
+      {
+        "sNo": 6,
+        "cropName": "सरसों (खुरई मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 7500,
+        "maxPrice": 8725,
+        "modalPrice": 7500,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 6200
+      },
+      {
+        "sNo": 7,
+        "cropName": "मूंग (बीना मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 6450,
+        "maxPrice": 6450,
+        "modalPrice": 6450,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 8780
+      }
+    ],
+    "updatedAt": "2026-11-24T08:34:33.788Z"
+  },
+  "mp-neemuch-neemuch__23-11-2026": {
+    "mandiId": "mp-neemuch-neemuch",
+    "date": "23-11-2026",
+    "totalContracts": "-",
+    "totalArrival": "-",
+    "arrivalUnit": "क्विंटल",
+    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • 3 सीधी मंडी + 0 जिला मंडी • 14:04 IST)",
+    "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
+    "sourceUrls": [
+      {
+        "title": "गेहूं — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/wheat/madhya-pradesh/"
+      },
+      {
+        "title": "चना — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/chana-bengal-gram/madhya-pradesh/"
+      },
+      {
+        "title": "उड़द — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/urad-black-gram/madhya-pradesh/"
+      }
+    ],
+    "rows": [
+      {
+        "sNo": 1,
+        "cropName": "गेहूं",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 2850,
+        "maxPrice": 3476,
+        "modalPrice": 3476,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 2625
+      },
+      {
+        "sNo": 2,
+        "cropName": "चना",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 5092,
+        "maxPrice": 7800,
+        "modalPrice": 7550,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 5958
+      },
+      {
+        "sNo": 3,
+        "cropName": "उड़द",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 3500,
+        "maxPrice": 8601,
+        "modalPrice": 8401,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 8200
+      }
+    ],
+    "updatedAt": "2026-11-24T08:34:35.290Z"
+  },
+  "mp-mandsaur-mandsaur__23-11-2026": {
+    "mandiId": "mp-mandsaur-mandsaur",
+    "date": "23-11-2026",
+    "totalContracts": "-",
+    "totalArrival": "-",
+    "arrivalUnit": "क्विंटल",
+    "releaseTime": "स्वतः लाइव Agmarknet सिंक (23-11-2026 • 1 सीधी मंडी + 4 जिला मंडी • 14:04 IST)",
+    "sourceLabel": "Agmarknet / KisanSamadhan लाइव",
+    "sourceUrls": [
+      {
+        "title": "चना — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/chana-bengal-gram/madhya-pradesh/"
+      },
+      {
+        "title": "गेहूं — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/wheat/madhya-pradesh/"
+      },
+      {
+        "title": "उड़द — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/urad-black-gram/madhya-pradesh/"
+      },
+      {
+        "title": "सरसों — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/mustard/madhya-pradesh/"
+      },
+      {
+        "title": "मसूर — Agmarknet लाइव",
+        "uri": "https://kisansamadhan.com/mandi-bhav/masur/madhya-pradesh/"
+      }
+    ],
+    "rows": [
+      {
+        "sNo": 1,
+        "cropName": "चना",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 5301,
+        "maxPrice": 8101,
+        "modalPrice": 8101,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 5958
+      },
+      {
+        "sNo": 2,
+        "cropName": "गेहूं (गरोठ मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 2525,
+        "maxPrice": 2590,
+        "modalPrice": 2590,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 2625
+      },
+      {
+        "sNo": 3,
+        "cropName": "उड़द (गरोठ मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 5000,
+        "maxPrice": 7500,
+        "modalPrice": 7500,
+        "yesterdayPrice": 8070,
+        "priceChange": -570,
+        "msp": 8200
+      },
+      {
+        "sNo": 4,
+        "cropName": "सरसों (पिपलिया मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 9200,
+        "maxPrice": 9722,
+        "modalPrice": 9722,
+        "yesterdayPrice": 9399,
+        "priceChange": 323,
+        "msp": 6200
+      },
+      {
+        "sNo": 5,
+        "cropName": "मसूर (पिपलिया मंडी)",
+        "contracts": "-",
+        "arrival": "-",
+        "arrivalUnit": "क्विंटल",
+        "minPrice": 5712,
+        "maxPrice": 5712,
+        "modalPrice": 5712,
+        "yesterdayPrice": 0,
+        "priceChange": 0,
+        "msp": 7000
+      }
+    ],
+    "updatedAt": "2026-11-24T08:34:36.795Z"
   }
 }
